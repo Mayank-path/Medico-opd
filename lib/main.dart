@@ -74,9 +74,7 @@ class _AuthGateState extends State<AuthGate> {
     // If Supabase is not configured / initialized, render Login/Signup screens directly
     if (!widget.initResult.isReady) {
       if (_showSignup) {
-        return SignupScreen(
-          onNavigateToLogin: () => _toggleAuthScreen(false),
-        );
+        return SignupScreen(onNavigateToLogin: () => _toggleAuthScreen(false));
       } else {
         return LoginScreen(onNavigateToSignup: () => _toggleAuthScreen(true));
       }
@@ -103,4 +101,3 @@ class _AuthGateState extends State<AuthGate> {
     );
   }
 }
-

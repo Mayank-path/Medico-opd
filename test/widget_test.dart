@@ -43,12 +43,17 @@ void main() {
         );
 
         // Tap register link to toggle to signup screen
-        await tester.tap(find.text("Don't have an account? Register Doctor & Clinic"));
+        await tester.tap(
+          find.text("Don't have an account? Register Doctor & Clinic"),
+        );
         await tester.pumpAndSettle();
 
         // Verify Doctor Signup Screen is displayed
         expect(find.text('Doctor & Clinic Registration'), findsOneWidget);
-        expect(find.widgetWithText(ElevatedButton, 'Register & Create Clinic'), findsOneWidget);
+        expect(
+          find.widgetWithText(ElevatedButton, 'Register & Create Clinic'),
+          findsOneWidget,
+        );
       },
     );
 
