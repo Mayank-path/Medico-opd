@@ -73,6 +73,22 @@ jobs:
       - name: Build Android Debug APK
         run: flutter build apk --debug
 
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: Prune unused Android NDK and Boost
+        run: |
+          sudo rm -rf /usr/local/lib/android/sdk/ndk* /usr/local/share/boost || true
+          df -h
+
       - name: Enable KVM group perms
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm-rules.rules
