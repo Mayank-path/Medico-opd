@@ -17,7 +17,7 @@ void main() {
 
   group('Widget Smoke Tests', () {
     testWidgets(
-      'PlaceholderHomeScreen renders skeleton shell cleanly when unconfigured',
+      'AuthGate renders Doctor LoginScreen cleanly when unconfigured and allows navigation to signup',
       (WidgetTester tester) async {
         tester.view.physicalSize = const Size(1080, 2400);
         tester.view.devicePixelRatio = 1.0;
@@ -34,23 +34,21 @@ void main() {
         await tester.pumpWidget(const MedicoApp(initialResult: mockResult));
         await tester.pumpAndSettle();
 
-        // Verify title and key components are displayed
-        expect(find.text('Medico OPD Assistant'), findsWidgets);
-        expect(find.text('Foundation & Scaffolding Shell'), findsOneWidget);
-
-        final pingButtonFinder = find.widgetWithText(
-          FilledButton,
-          'Verify Supabase Ping',
-        );
-        expect(pingButtonFinder, findsOneWidget);
-
-        await tester.tap(pingButtonFinder);
-        await tester.pumpAndSettle();
-
+        // Verify Doctor Login Screen is displayed
+        expect(find.text('Doctor Login'), findsOneWidget);
+        expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
         expect(
-          find.textContaining('Supabase credentials unconfigured'),
+          find.text("Don't have an account? Register Doctor & Clinic"),
           findsOneWidget,
         );
+
+        // Tap register link to toggle to signup screen
+        await tester.tap(find.text("Don't have an account? Register Doctor & Clinic"));
+        await tester.pumpAndSettle();
+
+        // Verify Doctor Signup Screen is displayed
+        expect(find.text('Doctor & Clinic Registration'), findsOneWidget);
+        expect(find.widgetWithText(ElevatedButton, 'Register & Create Clinic'), findsOneWidget);
       },
     );
 

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/config/env_config.dart';
 import '../../../core/supabase/supabase_client_provider.dart';
 
 class AuthResult {
@@ -56,6 +57,12 @@ class AuthService {
     }
     if (trimmedClinicName.isEmpty) {
       return AuthResult.failure('Clinic name is required.');
+    }
+
+    if (_customClient == null && !EnvConfig.isConfigured) {
+      return AuthResult.failure(
+        'Supabase credentials unconfigured. Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env.',
+      );
     }
 
     try {
@@ -114,6 +121,12 @@ class AuthService {
 
     if (trimmedEmail.isEmpty || trimmedPassword.isEmpty) {
       return AuthResult.failure('Email and password cannot be empty.');
+    }
+
+    if (_customClient == null && !EnvConfig.isConfigured) {
+      return AuthResult.failure(
+        'Supabase credentials unconfigured. Please configure SUPABASE_URL and SUPABASE_ANON_KEY in your .env.',
+      );
     }
 
     try {
