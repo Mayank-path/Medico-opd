@@ -2,7 +2,7 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, 'test/**' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -44,7 +44,7 @@ jobs:
         run: flutter test
 
   build-android:
-    name: Build Android Debug APK
+    name: Build Android APK & Emulate
     needs: analyze-and-test
     runs-on: ubuntu-latest
     steps:
@@ -73,8 +73,37 @@ jobs:
       - name: Build Android Debug APK
         run: flutter build apk --debug
 
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm-rules.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger
+
+      - name: Run on Android Emulator & Capture Screenshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb wait-for-device
+            adb install build/app/outputs/flutter-apk/app-debug.apk
+            adb shell am start -n com.medico.opd.medico_opd/.MainActivity
+            sleep 10
+            adb exec-out screencap -p > screenshot_android.png
+            ls -lh screenshot_android.png
+
+      - name: Upload Android Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_android
+          path: screenshot_android.png
+          if-no-files-found: error
+
   build-ios:
-    name: Build iOS Target (Simulator)
+    name: Build iOS Target & Simulate
     needs: analyze-and-test
     runs-on: macos-latest
     steps:
@@ -94,5 +123,33 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build iOS without code signing
-        run: flutter build ios --config-only --no-codesign
+      - name: Boot Simulator, Build and Capture Screenshot
+        run: |
+          # 1. Select and boot available iPhone simulator
+          UDID=$(xcrun simctl list devices available | grep -m 1 -E 'iPhone' | sed -E 's/.* \(([-0-9A-F]+)\).*/\1/')
+          echo "Selected Simulator UDID: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" || true
+
+          # 2. Build iOS app for simulator
+          flutter build ios --simulator --debug --no-codesign
+
+          # 3. Locate app bundle and install
+          APP_PATH=$(find build/ios/iphonesimulator -name "*.app" -maxdepth 2 | head -n 1)
+          echo "Found app bundle at: $APP_PATH"
+          xcrun simctl install "$UDID" "$APP_PATH"
+
+          # 4. Launch app
+          xcrun simctl launch "$UDID" com.medico.opd.medicoOpd
+          sleep 10
+
+          # 5. Capture screenshot
+          xcrun simctl io "$UDID" screenshot screenshot_ios.png
+          ls -lh screenshot_ios.png
+
+      - name: Upload iOS Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_ios
+          path: screenshot_ios.png
+          if-no-files-found: error
