@@ -16,6 +16,9 @@ void main() async {
   // Initialize Supabase client scaffold
   final initResult = await initSupabaseClient();
 
+  // Deliberate lint error for CI demonstration (TASK-000-02)
+  final deliberateUnusedVariable = 'deliberate_lint_error';
+
   runApp(MedicoApp(initialResult: initResult));
 }
 
