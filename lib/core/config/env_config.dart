@@ -68,7 +68,8 @@ class EnvConfig {
       return false;
     }
 
-    return Uri.tryParse(url)?.hasAbsolutePath ?? false;
+    final uri = Uri.tryParse(url);
+    return uri != null && uri.hasScheme && uri.host.isNotEmpty;
   }
 
   /// Optional test doctor email used for automated CI device screen capture.
