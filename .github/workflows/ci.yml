@@ -36,8 +36,8 @@ jobs:
           CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           cat <<EOF > .env
-          SUPABASE_URL=${SUPABASE_TEST_URL}
-          SUPABASE_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          SUPABASE_URL=https://dyfrknwejqwilstcoytt.supabase.co
+          SUPABASE_ANON_KEY=sb_publishable_jBV_X6q8QXB4gIRSeny0GA_YnMwkNcT
           SUPABASE_TEST_URL=${SUPABASE_TEST_URL}
           SUPABASE_TEST_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
           SUPABASE_TEST_SERVICE_ROLE_KEY=${SUPABASE_TEST_SERVICE_ROLE_KEY}

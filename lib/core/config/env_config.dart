@@ -35,23 +35,7 @@ class EnvConfig {
       return _envSupabaseUrl;
     }
     if (_dotenvLoaded) {
-      final url = dotenv.maybeGet('SUPABASE_URL') ?? '';
-      if (url.isNotEmpty &&
-          !url.contains('your-project') &&
-          !url.contains('placeholder')) {
-        return url;
-      }
-      final testUrl = dotenv.maybeGet('SUPABASE_TEST_URL') ?? '';
-      if (testUrl.isNotEmpty &&
-          !testUrl.contains('your-project') &&
-          !testUrl.contains('placeholder')) {
-        return testUrl;
-      }
-    }
-    if (testSupabaseUrl.isNotEmpty &&
-        !testSupabaseUrl.contains('your-project') &&
-        !testSupabaseUrl.contains('placeholder')) {
-      return testSupabaseUrl;
+      return dotenv.maybeGet('SUPABASE_URL') ?? '';
     }
     return '';
   }
@@ -64,23 +48,7 @@ class EnvConfig {
       return _envSupabaseAnonKey;
     }
     if (_dotenvLoaded) {
-      final key = dotenv.maybeGet('SUPABASE_ANON_KEY') ?? '';
-      if (key.isNotEmpty &&
-          !key.contains('your-anon-key') &&
-          !key.contains('placeholder')) {
-        return key;
-      }
-      final testKey = dotenv.maybeGet('SUPABASE_TEST_ANON_KEY') ?? '';
-      if (testKey.isNotEmpty &&
-          !testKey.contains('your-anon-key') &&
-          !testKey.contains('placeholder')) {
-        return testKey;
-      }
-    }
-    if (testSupabaseAnonKey.isNotEmpty &&
-        !testSupabaseAnonKey.contains('your-anon-key') &&
-        !testSupabaseAnonKey.contains('placeholder')) {
-      return testSupabaseAnonKey;
+      return dotenv.maybeGet('SUPABASE_ANON_KEY') ?? '';
     }
     return '';
   }
