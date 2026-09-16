@@ -148,7 +148,7 @@ jobs:
             adb install build/app/outputs/flutter-apk/app-debug.apk
             adb shell am start -n com.medico.opd.medico_opd/.MainActivity
             # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-            sleep 25
+            sleep 35
             adb exec-out screencap -p > screenshot_clinic_profile_android.png
             cp screenshot_clinic_profile_android.png screenshot_android.png
             ls -lh screenshot_clinic_profile_android.png
@@ -231,7 +231,7 @@ jobs:
           # 4. Launch app
           xcrun simctl launch "$UDID" com.medico.opd.medicoOpd
           # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-          sleep 25
+          sleep 45
 
           # 5. Capture screenshot
           xcrun simctl io "$UDID" screenshot screenshot_clinic_profile_ios.png

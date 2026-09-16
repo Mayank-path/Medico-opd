@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../../core/config/env_config.dart';
+import '../../clinic/screens/clinic_profile_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -34,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> {
         testDoctorPassword.isNotEmpty) {
       _emailController.text = testDoctorEmail;
       _passwordController.text = testDoctorPassword;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) _handleLogin();
       });
     }
@@ -64,11 +65,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
+    if (result.isSuccess) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const ClinicProfileScreen()),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = false;
-      if (!result.isSuccess) {
-        _errorMessage = result.errorMessage;
-      }
+      _errorMessage = result.errorMessage;
     });
   }
 
