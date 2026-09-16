@@ -137,12 +137,16 @@ void main() {
 
   final bool hasTestConfig =
       testSupabaseUrl.isNotEmpty &&
+      !testSupabaseUrl.contains('your-test-project') &&
+      !testSupabaseUrl.contains('placeholder') &&
       testSupabaseAnonKey.isNotEmpty &&
+      !testSupabaseAnonKey.contains('your-test-anon-key') &&
       testServiceRoleKey != null &&
-      testServiceRoleKey.isNotEmpty;
+      testServiceRoleKey.isNotEmpty &&
+      !testServiceRoleKey.contains('your-test-service-role-key');
 
   // Active production guard check
-  if (testSupabaseUrl.isNotEmpty) {
+  if (hasTestConfig) {
     final prodUrl = _getEnvValue('SUPABASE_URL') ?? EnvConfig.supabaseUrl;
     verifyNotProductionUrl(testSupabaseUrl, prodUrl);
   }

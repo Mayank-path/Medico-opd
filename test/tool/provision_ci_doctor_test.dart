@@ -59,7 +59,10 @@ void main() {
               ? getVal('TEST_DOCTOR_PASSWORD')
               : 'SecureTestPass123!');
 
-    if (testUrl.isEmpty || testServiceRoleKey.isEmpty) {
+    if (testUrl.isEmpty ||
+        testUrl.contains('your-test-project') ||
+        testServiceRoleKey.isEmpty ||
+        testServiceRoleKey.contains('your-test-service-role-key')) {
       print(
         'Skipping CI test doctor provisioning: SUPABASE_TEST_URL or SUPABASE_TEST_SERVICE_ROLE_KEY not configured.',
       );
