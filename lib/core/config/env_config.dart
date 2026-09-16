@@ -70,7 +70,12 @@ class EnvConfig {
   static String? get testDoctorEmail {
     const fromEnv = String.fromEnvironment('CI_TEST_DOCTOR_EMAIL');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (_dotenvLoaded) return dotenv.maybeGet('CI_TEST_DOCTOR_EMAIL');
+    const fromEnvAlt = String.fromEnvironment('TEST_DOCTOR_EMAIL');
+    if (fromEnvAlt.isNotEmpty) return fromEnvAlt;
+    if (_dotenvLoaded) {
+      return dotenv.maybeGet('CI_TEST_DOCTOR_EMAIL') ??
+          dotenv.maybeGet('TEST_DOCTOR_EMAIL');
+    }
     return null;
   }
 
@@ -78,7 +83,12 @@ class EnvConfig {
   static String? get testDoctorPassword {
     const fromEnv = String.fromEnvironment('CI_TEST_DOCTOR_PASSWORD');
     if (fromEnv.isNotEmpty) return fromEnv;
-    if (_dotenvLoaded) return dotenv.maybeGet('CI_TEST_DOCTOR_PASSWORD');
+    const fromEnvAlt = String.fromEnvironment('TEST_DOCTOR_PASSWORD');
+    if (fromEnvAlt.isNotEmpty) return fromEnvAlt;
+    if (_dotenvLoaded) {
+      return dotenv.maybeGet('CI_TEST_DOCTOR_PASSWORD') ??
+          dotenv.maybeGet('TEST_DOCTOR_PASSWORD');
+    }
     return null;
   }
 

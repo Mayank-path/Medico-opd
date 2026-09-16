@@ -32,6 +32,8 @@ jobs:
           SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
           SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
           SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
+          CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
+          CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           cp .env.example .env
           if [ -n "$SUPABASE_TEST_URL" ]; then
@@ -42,6 +44,12 @@ jobs:
           fi
           if [ -n "$SUPABASE_TEST_SERVICE_ROLE_KEY" ]; then
             sed -i "s|SUPABASE_TEST_SERVICE_ROLE_KEY=.*|SUPABASE_TEST_SERVICE_ROLE_KEY=$SUPABASE_TEST_SERVICE_ROLE_KEY|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
+            sed -i "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
+            sed -i "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
           fi
 
       - name: Install dependencies
@@ -77,14 +85,43 @@ jobs:
           cache: true
 
       - name: Prepare environment configuration
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
+          CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           cp .env.example .env
+          if [ -n "$SUPABASE_TEST_URL" ]; then
+            sed -i "s|SUPABASE_TEST_URL=.*|SUPABASE_TEST_URL=$SUPABASE_TEST_URL|" .env
+            sed -i "s|SUPABASE_URL=.*|SUPABASE_URL=$SUPABASE_TEST_URL|" .env
+          fi
+          if [ -n "$SUPABASE_TEST_ANON_KEY" ]; then
+            sed -i "s|SUPABASE_TEST_ANON_KEY=.*|SUPABASE_TEST_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
+            sed -i "s|SUPABASE_ANON_KEY=.*|SUPABASE_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
+            sed -i "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
+            sed -i "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
+          fi
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build Android Debug APK
-        run: flutter build apk --debug
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
+          CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
+        run: |
+          flutter build apk --debug \
+            --dart-define=SUPABASE_URL="${SUPABASE_TEST_URL}" \
+            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
+            --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
+            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
 
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
@@ -120,11 +157,20 @@ jobs:
             adb wait-for-device
             adb install build/app/outputs/flutter-apk/app-debug.apk
             adb shell am start -n com.medico.opd.medico_opd/.MainActivity
-            sleep 10
-            adb exec-out screencap -p > screenshot_android.png
-            ls -lh screenshot_android.png
+            # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
+            sleep 25
+            adb exec-out screencap -p > screenshot_clinic_profile_android.png
+            cp screenshot_clinic_profile_android.png screenshot_android.png
+            ls -lh screenshot_clinic_profile_android.png
 
-      - name: Upload Android Screenshot
+      - name: Upload Android Clinic Profile Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_clinic_profile_android
+          path: screenshot_clinic_profile_android.png
+          if-no-files-found: error
+
+      - name: Upload Android Screenshot (Legacy Alias)
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_android
@@ -146,13 +192,37 @@ jobs:
           cache: true
 
       - name: Prepare environment configuration
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
+          CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           cp .env.example .env
+          if [ -n "$SUPABASE_TEST_URL" ]; then
+            sed -i '' "s|SUPABASE_TEST_URL=.*|SUPABASE_TEST_URL=$SUPABASE_TEST_URL|" .env
+            sed -i '' "s|SUPABASE_URL=.*|SUPABASE_URL=$SUPABASE_TEST_URL|" .env
+          fi
+          if [ -n "$SUPABASE_TEST_ANON_KEY" ]; then
+            sed -i '' "s|SUPABASE_TEST_ANON_KEY=.*|SUPABASE_TEST_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
+            sed -i '' "s|SUPABASE_ANON_KEY=.*|SUPABASE_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
+            sed -i '' "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
+          fi
+          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
+            sed -i '' "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
+          fi
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Boot Simulator, Build and Capture Screenshot
+        env:
+          SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
+          SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
+          CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
+          CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           # 1. Select and boot available iPhone simulator
           UDID=$(xcrun simctl list devices available | grep -m 1 -E 'iPhone' | sed -E 's/.* \(([-0-9A-F]+)\).*/\1/')
@@ -161,7 +231,11 @@ jobs:
           xcrun simctl bootstatus "$UDID" || true
 
           # 2. Build iOS app for simulator
-          flutter build ios --simulator --debug --no-codesign
+          flutter build ios --simulator --debug --no-codesign \
+            --dart-define=SUPABASE_URL="${SUPABASE_TEST_URL}" \
+            --dart-define=SUPABASE_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
+            --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
+            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
 
           # 3. Locate app bundle and install
           APP_PATH=$(find build/ios/iphonesimulator -name "*.app" -maxdepth 2 | head -n 1)
@@ -170,13 +244,22 @@ jobs:
 
           # 4. Launch app
           xcrun simctl launch "$UDID" com.medico.opd.medicoOpd
-          sleep 10
+          # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
+          sleep 25
 
           # 5. Capture screenshot
-          xcrun simctl io "$UDID" screenshot screenshot_ios.png
-          ls -lh screenshot_ios.png
+          xcrun simctl io "$UDID" screenshot screenshot_clinic_profile_ios.png
+          cp screenshot_clinic_profile_ios.png screenshot_ios.png
+          ls -lh screenshot_clinic_profile_ios.png
 
-      - name: Upload iOS Screenshot
+      - name: Upload iOS Clinic Profile Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_clinic_profile_ios
+          path: screenshot_clinic_profile_ios.png
+          if-no-files-found: error
+
+      - name: Upload iOS Screenshot (Legacy Alias)
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_ios

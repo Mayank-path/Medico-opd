@@ -597,8 +597,7 @@ void main() {
         expect(
           threwFkException,
           isTrue,
-          reason:
-              'Deleting clinic while doctors row still references it must be rejected by foreign key RESTRICT',
+          reason: 'Deleting clinic while doctors row still references it must be rejected by foreign key RESTRICT',
         );
       });
 
@@ -697,8 +696,7 @@ void main() {
         expect(
           usersAfterFailure.length,
           equals(usersBeforeFailure.length),
-          reason:
-              'Deliberate failure cleanup must strictly restore user count to pre-test baseline',
+          reason: 'Deliberate failure cleanup must strictly restore user count to pre-test baseline',
         );
       });
     },
