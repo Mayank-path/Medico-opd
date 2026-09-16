@@ -35,22 +35,16 @@ jobs:
           CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
           CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
-          cp .env.example .env
-          if [ -n "$SUPABASE_TEST_URL" ]; then
-            sed -i "s|SUPABASE_TEST_URL=.*|SUPABASE_TEST_URL=$SUPABASE_TEST_URL|" .env
-          fi
-          if [ -n "$SUPABASE_TEST_ANON_KEY" ]; then
-            sed -i "s|SUPABASE_TEST_ANON_KEY=.*|SUPABASE_TEST_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
-          fi
-          if [ -n "$SUPABASE_TEST_SERVICE_ROLE_KEY" ]; then
-            sed -i "s|SUPABASE_TEST_SERVICE_ROLE_KEY=.*|SUPABASE_TEST_SERVICE_ROLE_KEY=$SUPABASE_TEST_SERVICE_ROLE_KEY|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
-            sed -i "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
-            sed -i "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
-          fi
+          cat <<EOF > .env
+          SUPABASE_URL=${SUPABASE_TEST_URL}
+          SUPABASE_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          SUPABASE_TEST_URL=${SUPABASE_TEST_URL}
+          SUPABASE_TEST_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          SUPABASE_TEST_SERVICE_ROLE_KEY=${SUPABASE_TEST_SERVICE_ROLE_KEY}
+          CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
+          CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
+          EOF
+          cat .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -91,21 +85,15 @@ jobs:
           CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
           CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
-          cp .env.example .env
-          if [ -n "$SUPABASE_TEST_URL" ]; then
-            sed -i "s|SUPABASE_TEST_URL=.*|SUPABASE_TEST_URL=$SUPABASE_TEST_URL|" .env
-            sed -i "s|SUPABASE_URL=.*|SUPABASE_URL=$SUPABASE_TEST_URL|" .env
-          fi
-          if [ -n "$SUPABASE_TEST_ANON_KEY" ]; then
-            sed -i "s|SUPABASE_TEST_ANON_KEY=.*|SUPABASE_TEST_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
-            sed -i "s|SUPABASE_ANON_KEY=.*|SUPABASE_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
-            sed -i "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
-            sed -i "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
-          fi
+          cat <<EOF > .env
+          SUPABASE_URL=${SUPABASE_TEST_URL}
+          SUPABASE_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          SUPABASE_TEST_URL=${SUPABASE_TEST_URL}
+          SUPABASE_TEST_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
+          CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
+          EOF
+          cat .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -120,6 +108,8 @@ jobs:
           flutter build apk --debug \
             --dart-define=SUPABASE_URL="${SUPABASE_TEST_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
+            --dart-define=SUPABASE_TEST_URL="${SUPABASE_TEST_URL}" \
+            --dart-define=SUPABASE_TEST_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
             --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
             --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
 
@@ -198,21 +188,15 @@ jobs:
           CI_TEST_DOCTOR_EMAIL: ${{ secrets.CI_TEST_DOCTOR_EMAIL || 'dr.rajesh.sharma.ci@medico-opd.in' }}
           CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
-          cp .env.example .env
-          if [ -n "$SUPABASE_TEST_URL" ]; then
-            sed -i '' "s|SUPABASE_TEST_URL=.*|SUPABASE_TEST_URL=$SUPABASE_TEST_URL|" .env
-            sed -i '' "s|SUPABASE_URL=.*|SUPABASE_URL=$SUPABASE_TEST_URL|" .env
-          fi
-          if [ -n "$SUPABASE_TEST_ANON_KEY" ]; then
-            sed -i '' "s|SUPABASE_TEST_ANON_KEY=.*|SUPABASE_TEST_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
-            sed -i '' "s|SUPABASE_ANON_KEY=.*|SUPABASE_ANON_KEY=$SUPABASE_TEST_ANON_KEY|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_EMAIL" ]; then
-            sed -i '' "s|CI_TEST_DOCTOR_EMAIL=.*|CI_TEST_DOCTOR_EMAIL=$CI_TEST_DOCTOR_EMAIL|" .env
-          fi
-          if [ -n "$CI_TEST_DOCTOR_PASSWORD" ]; then
-            sed -i '' "s|CI_TEST_DOCTOR_PASSWORD=.*|CI_TEST_DOCTOR_PASSWORD=$CI_TEST_DOCTOR_PASSWORD|" .env
-          fi
+          cat <<EOF > .env
+          SUPABASE_URL=${SUPABASE_TEST_URL}
+          SUPABASE_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          SUPABASE_TEST_URL=${SUPABASE_TEST_URL}
+          SUPABASE_TEST_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
+          CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
+          CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
+          EOF
+          cat .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -234,6 +218,8 @@ jobs:
           flutter build ios --simulator --debug --no-codesign \
             --dart-define=SUPABASE_URL="${SUPABASE_TEST_URL}" \
             --dart-define=SUPABASE_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
+            --dart-define=SUPABASE_TEST_URL="${SUPABASE_TEST_URL}" \
+            --dart-define=SUPABASE_TEST_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
             --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
             --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
 

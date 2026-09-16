@@ -27,23 +27,60 @@ class EnvConfig {
   }
 
   /// Supabase project URL.
+  /// Supabase project URL.
   static String get supabaseUrl {
-    if (_envSupabaseUrl.isNotEmpty) {
+    if (_envSupabaseUrl.isNotEmpty &&
+        !_envSupabaseUrl.contains('your-project') &&
+        !_envSupabaseUrl.contains('placeholder')) {
       return _envSupabaseUrl;
     }
     if (_dotenvLoaded) {
-      return dotenv.maybeGet('SUPABASE_URL') ?? '';
+      final url = dotenv.maybeGet('SUPABASE_URL') ?? '';
+      if (url.isNotEmpty &&
+          !url.contains('your-project') &&
+          !url.contains('placeholder')) {
+        return url;
+      }
+      final testUrl = dotenv.maybeGet('SUPABASE_TEST_URL') ?? '';
+      if (testUrl.isNotEmpty &&
+          !testUrl.contains('your-project') &&
+          !testUrl.contains('placeholder')) {
+        return testUrl;
+      }
+    }
+    if (testSupabaseUrl.isNotEmpty &&
+        !testSupabaseUrl.contains('your-project') &&
+        !testSupabaseUrl.contains('placeholder')) {
+      return testSupabaseUrl;
     }
     return '';
   }
 
   /// Supabase anonymous public API key.
   static String get supabaseAnonKey {
-    if (_envSupabaseAnonKey.isNotEmpty) {
+    if (_envSupabaseAnonKey.isNotEmpty &&
+        !_envSupabaseAnonKey.contains('your-anon-key') &&
+        !_envSupabaseAnonKey.contains('placeholder')) {
       return _envSupabaseAnonKey;
     }
     if (_dotenvLoaded) {
-      return dotenv.maybeGet('SUPABASE_ANON_KEY') ?? '';
+      final key = dotenv.maybeGet('SUPABASE_ANON_KEY') ?? '';
+      if (key.isNotEmpty &&
+          !key.contains('your-anon-key') &&
+          !key.contains('placeholder')) {
+        return key;
+      }
+      final testKey = dotenv.maybeGet('SUPABASE_TEST_ANON_KEY') ?? '';
+      if (testKey.isNotEmpty &&
+          !testKey.contains('your-anon-key') &&
+          !testKey.contains('placeholder')) {
+        return testKey;
+      }
+    }
+    if (testSupabaseAnonKey.isNotEmpty &&
+        !testSupabaseAnonKey.contains('your-anon-key') &&
+        !testSupabaseAnonKey.contains('placeholder')) {
+      return testSupabaseAnonKey;
     }
     return '';
   }
