@@ -70,6 +70,15 @@ class AuthService {
       final authResponse = await _client.auth.signUp(
         email: trimmedEmail,
         password: trimmedPassword,
+        data: {
+          'doctor_name': trimmedDoctorName,
+          'qualifications': qualifications?.trim() ?? '',
+          'registration_number': registrationNumber?.trim() ?? '',
+          'doctor_contact': doctorContact?.trim() ?? '',
+          'clinic_name': trimmedClinicName,
+          'clinic_address': clinicAddress?.trim() ?? '',
+          'clinic_contact': clinicContact?.trim() ?? '',
+        },
       );
 
       final user = authResponse.user;
@@ -79,8 +88,7 @@ class AuthService {
         );
       }
 
-      // If email confirmation is required and no session yet, doctor will complete onboarding on first login.
-      // If session is active, call atomic RPC immediately:
+      // If session is already active (e.g. autoconfirm or admin creation), call atomic RPC immediately:
       if (_client.auth.currentSession != null) {
         await _client.rpc(
           'create_clinic_and_doctor',
@@ -111,6 +119,74 @@ class AuthService {
     }
   }
 
+  /// Finalizes clinic and doctor onboarding if pending after email confirmation.
+  ///
+  /// Guaranteed to be atomic and idempotent. If a doctor record already exists,
+  /// this safely returns [AuthResult.success]. If onboarding is pending, it executes
+  /// the [create_clinic_and_doctor] RPC.
+  Future<AuthResult> finalizePendingOnboarding([User? targetUser]) async {
+    final user = targetUser ?? currentUser;
+    if (user == null) {
+      return AuthResult.failure('No authenticated session found.');
+    }
+
+    try {
+      final existingDoctor = await _client
+          .from('doctors')
+          .select('id')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
+      if (existingDoctor != null) {
+        return AuthResult.success(user);
+      }
+
+      final meta = user.userMetadata ?? {};
+      final clinicName = meta['clinic_name'] as String?;
+      final doctorName = meta['doctor_name'] as String?;
+
+      if (clinicName == null ||
+          clinicName.trim().isEmpty ||
+          doctorName == null ||
+          doctorName.trim().isEmpty) {
+        return AuthResult.failure(
+          'Account setup incomplete: Missing clinic or doctor registration details.',
+        );
+      }
+
+      await _client.rpc(
+        'create_clinic_and_doctor',
+        params: {
+          'p_clinic_name': clinicName.trim(),
+          'p_clinic_address': (meta['clinic_address'] as String?)?.trim() ?? '',
+          'p_clinic_contact': (meta['clinic_contact'] as String?)?.trim() ?? '',
+          'p_doctor_name': doctorName.trim(),
+          'p_qualifications': (meta['qualifications'] as String?)?.trim() ?? '',
+          'p_registration_number':
+              (meta['registration_number'] as String?)?.trim() ?? '',
+          'p_doctor_contact': (meta['doctor_contact'] as String?)?.trim() ?? '',
+        },
+      );
+
+      return AuthResult.success(user);
+    } on PostgrestException catch (e) {
+      debugPrint(
+        '[AuthService] PostgrestException in finalizePendingOnboarding: ${e.message}',
+      );
+      if (e.message.contains('Doctor is already associated with a clinic')) {
+        return AuthResult.success(user);
+      }
+      return AuthResult.failure(_sanitizePostgrestError(e.message));
+    } catch (e) {
+      debugPrint(
+        '[AuthService] Unexpected error in finalizePendingOnboarding: $e',
+      );
+      return AuthResult.failure(
+        'Failed to finalize clinic setup. Please check your connection and retry.',
+      );
+    }
+  }
+
   /// Authenticates a doctor with email and password.
   Future<AuthResult> signIn({
     required String email,
@@ -134,7 +210,13 @@ class AuthService {
         email: trimmedEmail,
         password: trimmedPassword,
       );
-      return AuthResult.success(response.user);
+
+      final user = response.user;
+      if (user != null) {
+        await finalizePendingOnboarding(user);
+      }
+
+      return AuthResult.success(user);
     } on AuthException catch (e) {
       debugPrint('[AuthService] AuthException: ${e.message}');
       return AuthResult.failure(_sanitizeAuthError(e.message));

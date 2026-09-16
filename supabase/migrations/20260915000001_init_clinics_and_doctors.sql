@@ -165,21 +165,3 @@ BEGIN
 END;
 $$;
 
--- 8. Auto-confirm emails so doctors receive immediate session on signup
-CREATE OR REPLACE FUNCTION public.auto_confirm_users()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  NEW.email_confirmed_at := now();
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  BEFORE INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.auto_confirm_users();
-

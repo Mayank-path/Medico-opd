@@ -69,8 +69,32 @@ class _SignupScreenState extends State<SignupScreen> {
       _isLoading = false;
       if (!result.isSuccess) {
         _errorMessage = result.errorMessage;
+      } else if (_authService.currentSession == null) {
+        _showConfirmationDialog(_emailController.text.trim());
       }
     });
+  }
+
+  void _showConfirmationDialog(String email) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmation Email Sent'),
+        content: Text(
+          'A confirmation link has been sent to $email. Please confirm your email address, then sign in to access your clinic.',
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              widget.onNavigateToLogin();
+            },
+            child: const Text('Proceed to Sign In'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

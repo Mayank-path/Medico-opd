@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
+import '../../../core/config/env_config.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -19,6 +21,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    final testDoctorEmail = EnvConfig.testDoctorEmail;
+    final testDoctorPassword = EnvConfig.testDoctorPassword;
+    if (kDebugMode &&
+        testDoctorEmail != null &&
+        testDoctorEmail.isNotEmpty &&
+        testDoctorPassword != null &&
+        testDoctorPassword.isNotEmpty) {
+      _emailController.text = testDoctorEmail;
+      _passwordController.text = testDoctorPassword;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _handleLogin();
+      });
+    }
+  }
 
   @override
   void dispose() {

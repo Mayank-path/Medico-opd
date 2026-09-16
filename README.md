@@ -30,10 +30,17 @@ Secrets and backend API endpoints must **never** be hardcoded or checked into so
    ```
 2. Populate `.env` with your Supabase credentials:
    ```env
-   SUPABASE_URL=https://your-project-id.supabase.co
+   # Production application
+   SUPABASE_URL=https://your-production-project.supabase.co
    SUPABASE_ANON_KEY=your-actual-anon-key
+
+   # Isolated test project (Required for running adversarial RLS tests)
+   SUPABASE_TEST_URL=https://your-test-project.supabase.co
+   SUPABASE_TEST_ANON_KEY=your-test-anon-key
+   SUPABASE_TEST_SERVICE_ROLE_KEY=your-test-service-role-key
    ```
-   > **Security Notice**: `.env` is strictly excluded from version control via `.gitignore`. The app also supports compile-time defines (`--dart-define=SUPABASE_URL=...` and `--dart-define=SUPABASE_ANON_KEY=...`). When keys are omitted or dummy placeholders are provided, the application gracefully loads into an unconfigured skeleton state without crashing.
+   > **Inviolable Security Rule**: Tests **NEVER** run against the production database. All multi-tenant, adversarial, and integration test suites strictly require an isolated test instance (e.g. `medico-opd-test`). An active compile-time/runtime production guard immediately blocks test execution if `SUPABASE_TEST_URL` points to production.
+
 
 ---
 

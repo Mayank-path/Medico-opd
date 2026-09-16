@@ -20,6 +20,7 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
   late final ClinicService _clinicService;
 
   bool _isLoading = true;
+  bool _isOnboardingIncomplete = false;
   String? _errorMessage;
   DoctorModel? _doctor;
   ClinicModel? _clinic;
@@ -39,11 +40,37 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
     });
 
     try {
-      final doctor = await _clinicService.fetchCurrentDoctor();
+      var doctor = await _clinicService.fetchCurrentDoctor();
+      if (doctor == null) {
+        final currentUser = _authService.currentUser;
+        final meta = currentUser?.userMetadata;
+        final hasPendingMeta =
+            meta != null &&
+            (meta['clinic_name'] as String?)?.isNotEmpty == true &&
+            (meta['doctor_name'] as String?)?.isNotEmpty == true;
+
+        if (hasPendingMeta) {
+          final onboardingRes = await _authService.finalizePendingOnboarding(
+            currentUser,
+          );
+          if (onboardingRes.isSuccess) {
+            doctor = await _clinicService.fetchCurrentDoctor();
+          } else {
+            setState(() {
+              _isLoading = false;
+              _isOnboardingIncomplete = true;
+              _errorMessage = onboardingRes.errorMessage ?? 'Account setup incomplete: Clinic registration could not be completed.';
+            });
+            return;
+          }
+        }
+      }
+
       if (doctor == null) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Doctor profile not found for the active session.';
+          _isOnboardingIncomplete = true;
+          _errorMessage = 'Account setup incomplete: Doctor profile not found. Tap to retry.';
         });
         return;
       }
@@ -60,6 +87,7 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
       setState(() {
         _doctor = doctor;
         _clinic = clinic;
+        _isOnboardingIncomplete = false;
         _isLoading = false;
       });
     } catch (e) {
@@ -68,6 +96,26 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
         _errorMessage = 'Failed to load profile data: $e';
       });
     }
+  }
+
+  Future<void> _retryOnboarding() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final res = await _authService.finalizePendingOnboarding();
+    if (!res.isSuccess) {
+      setState(() {
+        _isLoading = false;
+        _isOnboardingIncomplete = true;
+        _errorMessage =
+            res.errorMessage ?? 'Account setup incomplete — tap to retry.';
+      });
+      return;
+    }
+
+    await _loadProfileData();
   }
 
   Future<void> _handleLogout() async {
@@ -101,6 +149,47 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_isOnboardingIncomplete) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.assignment_late_outlined,
+                color: Colors.amber,
+                size: 56,
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Account setup incomplete',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage ?? 'Your email has been confirmed, but setting up your clinic and doctor profile was interrupted. Tap below to retry.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: Colors.black87),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                key: const Key('profile_retry_onboarding_button'),
+                onPressed: _retryOnboarding,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Tap to retry'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _handleLogout,
+                child: const Text('Sign Out'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_errorMessage != null) {

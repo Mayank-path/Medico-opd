@@ -65,4 +65,44 @@ class EnvConfig {
 
     return Uri.tryParse(url)?.hasAbsolutePath ?? false;
   }
+
+  /// Optional test doctor email used for automated CI device screen capture.
+  static String? get testDoctorEmail {
+    const fromEnv = String.fromEnvironment('CI_TEST_DOCTOR_EMAIL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (_dotenvLoaded) return dotenv.maybeGet('CI_TEST_DOCTOR_EMAIL');
+    return null;
+  }
+
+  /// Optional test doctor password used for automated CI device screen capture.
+  static String? get testDoctorPassword {
+    const fromEnv = String.fromEnvironment('CI_TEST_DOCTOR_PASSWORD');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (_dotenvLoaded) return dotenv.maybeGet('CI_TEST_DOCTOR_PASSWORD');
+    return null;
+  }
+
+  /// Supabase test project URL (used exclusively for testing/staging).
+  static String get testSupabaseUrl {
+    const fromEnv = String.fromEnvironment('SUPABASE_TEST_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (_dotenvLoaded) return dotenv.maybeGet('SUPABASE_TEST_URL') ?? '';
+    return '';
+  }
+
+  /// Supabase test project anonymous public API key.
+  static String get testSupabaseAnonKey {
+    const fromEnv = String.fromEnvironment('SUPABASE_TEST_ANON_KEY');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (_dotenvLoaded) return dotenv.maybeGet('SUPABASE_TEST_ANON_KEY') ?? '';
+    return '';
+  }
+
+  /// Supabase test project service role key.
+  static String? get testSupabaseServiceRoleKey {
+    const fromEnv = String.fromEnvironment('SUPABASE_TEST_SERVICE_ROLE_KEY');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    if (_dotenvLoaded) return dotenv.maybeGet('SUPABASE_TEST_SERVICE_ROLE_KEY');
+    return null;
+  }
 }
