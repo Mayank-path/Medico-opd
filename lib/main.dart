@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/env_config.dart';
 import 'core/supabase/supabase_client_provider.dart';
+import 'core/test/ci_flow_coordinator.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/signup_screen.dart';
 import 'features/clinic/screens/clinic_profile_screen.dart';
@@ -15,6 +17,11 @@ void main() async {
 
   // Initialize Supabase client scaffold with SecureLocalStorage
   final initResult = await initSupabaseClient();
+
+  if (kDebugMode &&
+      const bool.fromEnvironment('CI_CAPTURE_FLOW', defaultValue: false)) {
+    CiFlowCoordinator.init();
+  }
 
   runApp(MedicoApp(initialResult: initResult));
 }

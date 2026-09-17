@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/test/ci_flow_coordinator.dart';
 import '../../auth/services/auth_service.dart';
 import '../../patient/screens/patient_list_screen.dart';
 import '../models/clinic_model.dart';
@@ -95,19 +96,22 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
 
       if (kDebugMode &&
           const bool.fromEnvironment('CI_CAPTURE_FLOW', defaultValue: false)) {
-        Future.delayed(const Duration(seconds: 8), () {
-          if (mounted && _clinic != null && _doctor != null) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => PatientListScreen(
-                  clinicId: _clinic!.id,
-                  doctorId: _doctor!.id,
-                  clinicName: _clinic!.name,
+        CiFlowCoordinator.registerScreen(
+          screenName: 'clinic_profile',
+          onAdvance: () {
+            if (mounted && _clinic != null && _doctor != null) {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => PatientListScreen(
+                    clinicId: _clinic!.id,
+                    doctorId: _doctor!.id,
+                    clinicName: _clinic!.name,
+                  ),
                 ),
-              ),
-            );
-          }
-        });
+              );
+            }
+          },
+        );
       }
     } catch (e) {
       setState(() {

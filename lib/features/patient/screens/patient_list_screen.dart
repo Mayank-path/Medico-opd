@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/test/ci_flow_coordinator.dart';
 import '../../consultation/screens/consultation_history_screen.dart';
 import '../../consultation/services/consultation_service.dart';
 import '../models/patient_model.dart';
@@ -89,11 +90,14 @@ class _PatientListScreenState extends State<PatientListScreen> {
               'CI_CAPTURE_FLOW',
               defaultValue: false,
             )) {
-          Future.delayed(const Duration(seconds: 8), () {
-            if (mounted && _allPatients.isNotEmpty) {
-              _navigateToConsultations(_allPatients.first);
-            }
-          });
+          CiFlowCoordinator.registerScreen(
+            screenName: 'patient_list',
+            onAdvance: () {
+              if (mounted && _allPatients.isNotEmpty) {
+                _navigateToConsultations(_allPatients.first);
+              }
+            },
+          );
         }
       }
     } catch (e) {

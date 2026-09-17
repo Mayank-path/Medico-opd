@@ -147,16 +147,44 @@ jobs:
           script: |
             adb wait-for-device
             adb install build/app/outputs/flutter-apk/app-debug.apk
+            adb forward tcp:8888 tcp:8888
             adb shell am start -n com.medico.opd.medico_opd/.MainActivity
-            # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-            sleep 25
+
+            echo "=== Step 1: Awaiting ClinicProfileScreen ==="
+            for i in $(seq 1 45); do
+              STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+              echo "Attempt $i: App status is '$STATUS'"
+              if [ "$STATUS" = "clinic_profile" ]; then break; fi
+              sleep 2
+            done
+            sleep 2
+            echo "Capturing screenshot_clinic_profile_android.png..."
             adb exec-out screencap -p > screenshot_clinic_profile_android.png
-            # Allow time for auto-navigation to PatientListScreen
-            sleep 15
+
+            echo "=== Step 2: Advancing to PatientListScreen ==="
+            curl -s -m 5 http://127.0.0.1:8888/next || true
+            for i in $(seq 1 30); do
+              STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+              echo "Attempt $i: App status is '$STATUS'"
+              if [ "$STATUS" = "patient_list" ]; then break; fi
+              sleep 1
+            done
+            sleep 2
+            echo "Capturing screenshot_patient_list_android.png..."
             adb exec-out screencap -p > screenshot_patient_list_android.png
-            # Allow time for auto-navigation to ConsultationHistoryScreen
-            sleep 15
+
+            echo "=== Step 3: Advancing to ConsultationHistoryScreen ==="
+            curl -s -m 5 http://127.0.0.1:8888/next || true
+            for i in $(seq 1 30); do
+              STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+              echo "Attempt $i: App status is '$STATUS'"
+              if [ "$STATUS" = "consultation" ]; then break; fi
+              sleep 1
+            done
+            sleep 2
+            echo "Capturing screenshot_consultation_android.png..."
             adb exec-out screencap -p > screenshot_consultation_android.png
+
             ls -lh screenshot_*android.png
 
       - name: Upload Android Clinic Profile Screenshot
@@ -244,15 +272,42 @@ jobs:
 
           # 4. Launch app
           xcrun simctl launch "$UDID" com.medico.opd.medicoOpd
-          # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-          sleep 35
+
+          echo "=== Step 1: Awaiting ClinicProfileScreen ==="
+          for i in $(seq 1 45); do
+            STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+            echo "Attempt $i: App status is '$STATUS'"
+            if [ "$STATUS" = "clinic_profile" ]; then break; fi
+            sleep 2
+          done
+          sleep 2
+          echo "Capturing screenshot_clinic_profile_ios.png..."
           xcrun simctl io "$UDID" screenshot screenshot_clinic_profile_ios.png
-          # Allow time for auto-navigation to PatientListScreen
-          sleep 15
+
+          echo "=== Step 2: Advancing to PatientListScreen ==="
+          curl -s -m 5 http://127.0.0.1:8888/next || true
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+            echo "Attempt $i: App status is '$STATUS'"
+            if [ "$STATUS" = "patient_list" ]; then break; fi
+            sleep 1
+          done
+          sleep 2
+          echo "Capturing screenshot_patient_list_ios.png..."
           xcrun simctl io "$UDID" screenshot screenshot_patient_list_ios.png
-          # Allow time for auto-navigation to ConsultationHistoryScreen
-          sleep 15
+
+          echo "=== Step 3: Advancing to ConsultationHistoryScreen ==="
+          curl -s -m 5 http://127.0.0.1:8888/next || true
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+            echo "Attempt $i: App status is '$STATUS'"
+            if [ "$STATUS" = "consultation" ]; then break; fi
+            sleep 1
+          done
+          sleep 2
+          echo "Capturing screenshot_consultation_ios.png..."
           xcrun simctl io "$UDID" screenshot screenshot_consultation_ios.png
+
           ls -lh screenshot_*ios.png
 
       - name: Upload iOS Clinic Profile Screenshot

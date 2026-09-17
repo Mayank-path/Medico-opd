@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/test/ci_flow_coordinator.dart';
 
 import '../../patient/models/patient_model.dart';
 import '../models/consultation_model.dart';
@@ -51,6 +54,17 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
           _consultations = list;
           _isLoading = false;
         });
+
+        if (kDebugMode &&
+            const bool.fromEnvironment(
+              'CI_CAPTURE_FLOW',
+              defaultValue: false,
+            )) {
+          CiFlowCoordinator.registerScreen(
+            screenName: 'consultation',
+            onAdvance: null,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
