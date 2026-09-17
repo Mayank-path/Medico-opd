@@ -200,5 +200,4 @@ Future phases and tasks must adhere to these inviolable constraints:
    - All tests interacting with a live Supabase backend must exclusively target a separate, dedicated test project (`medico-opd-test`) configured via `SUPABASE_TEST_URL`, `SUPABASE_TEST_ANON_KEY`, and `SUPABASE_TEST_SERVICE_ROLE_KEY`.
    - The test harness must enforce self-updating production guards comparing `SUPABASE_TEST_URL` against `SUPABASE_URL` and immediately fail if they match.
    - Test suites must clean up all generated test records using cascade-safe foreign-key ordering (consultations/patients, then auth user deletion cascading doctors, then clinics) and assert that post-test user counts return to pre-test baseline.
-
-
+   - **Persistent CI Test Fixture**: To allow automated, authenticated device screenshot capture in CI without account bloat, an idempotent test fixture script ([test/tool/provision_ci_doctor_test.dart](file:///e:/medico-opd/test/tool/provision_ci_doctor_test.dart)) manages exactly 1 persistent test doctor (`dr.rajesh.sharma.ci@medico-opd.in` linked to `Apex Care Clinic`), 1 persistent patient (`Sunita Verma`, OPD-2026-0042), and 1 persistent consultation in `medico-opd-test`. This single doctor forms the baseline count of 1 user verified before and after all adversarial suites, preventing "mystery account" pollution.
