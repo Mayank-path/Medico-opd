@@ -54,4 +54,5 @@ app.*.map.json
 
 # Local artifacts cache
 /.artifacts/
+*.zip
 
