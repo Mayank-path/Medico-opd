@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../consultation/screens/consultation_history_screen.dart';
@@ -83,10 +84,11 @@ class _PatientListScreenState extends State<PatientListScreen> {
           _isLoading = false;
         });
 
-        if (const bool.fromEnvironment(
-          'CI_CAPTURE_FLOW',
-          defaultValue: false,
-        )) {
+        if (kDebugMode &&
+            const bool.fromEnvironment(
+              'CI_CAPTURE_FLOW',
+              defaultValue: false,
+            )) {
           Future.delayed(const Duration(seconds: 8), () {
             if (mounted && _allPatients.isNotEmpty) {
               _navigateToConsultations(_allPatients.first);

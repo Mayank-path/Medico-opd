@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../auth/services/auth_service.dart';
@@ -92,7 +93,8 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
         _isLoading = false;
       });
 
-      if (const bool.fromEnvironment('CI_CAPTURE_FLOW', defaultValue: false)) {
+      if (kDebugMode &&
+          const bool.fromEnvironment('CI_CAPTURE_FLOW', defaultValue: false)) {
         Future.delayed(const Duration(seconds: 8), () {
           if (mounted && _clinic != null && _doctor != null) {
             Navigator.of(context).push(
