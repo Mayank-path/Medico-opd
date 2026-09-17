@@ -157,7 +157,6 @@ jobs:
             # Allow time for auto-navigation to ConsultationHistoryScreen
             sleep 15
             adb exec-out screencap -p > screenshot_consultation_android.png
-            cp screenshot_patient_list_android.png screenshot_android.png
             ls -lh screenshot_*android.png
 
       - name: Upload Android Clinic Profile Screenshot
@@ -179,13 +178,6 @@ jobs:
         with:
           name: screenshot_consultation_android
           path: screenshot_consultation_android.png
-          if-no-files-found: error
-
-      - name: Upload Android Screenshot (Legacy Alias)
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshot_android
-          path: screenshot_android.png
           if-no-files-found: error
 
   build-ios:
@@ -261,7 +253,6 @@ jobs:
           # Allow time for auto-navigation to ConsultationHistoryScreen
           sleep 15
           xcrun simctl io "$UDID" screenshot screenshot_consultation_ios.png
-          cp screenshot_patient_list_ios.png screenshot_ios.png
           ls -lh screenshot_*ios.png
 
       - name: Upload iOS Clinic Profile Screenshot
@@ -283,11 +274,4 @@ jobs:
         with:
           name: screenshot_consultation_ios
           path: screenshot_consultation_ios.png
-          if-no-files-found: error
-
-      - name: Upload iOS Screenshot (Legacy Alias)
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshot_ios
-          path: screenshot_ios.png
           if-no-files-found: error
