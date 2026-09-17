@@ -6,6 +6,7 @@ import 'package:medico_opd/features/auth/screens/login_screen.dart';
 import 'package:medico_opd/features/auth/screens/signup_screen.dart';
 import 'package:medico_opd/features/clinic/models/clinic_model.dart';
 import 'package:medico_opd/features/clinic/models/doctor_model.dart';
+import 'package:medico_opd/features/patient/screens/add_patient_screen.dart';
 import 'package:medico_opd/main.dart';
 
 void main() {
@@ -168,6 +169,30 @@ void main() {
       expect(mockDoctor.clinicId, equals('clinic-456'));
       expect(mockClinic.name, equals('Apollo Health Clinic'));
       expect(mockClinic.id, equals('clinic-456'));
+    });
+
+    testWidgets('AddPatientScreen renders form fields and validates inputs', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AddPatientScreen(clinicId: 'clinic-123', doctorId: 'doc-123'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Register New Patient'), findsOneWidget);
+      expect(find.byKey(const Key('patient_full_name_input')), findsOneWidget);
+      expect(find.byKey(const Key('patient_age_input')), findsOneWidget);
+      expect(find.byKey(const Key('patient_sex_dropdown')), findsOneWidget);
+      expect(find.byKey(const Key('patient_contact_input')), findsOneWidget);
+      expect(find.byKey(const Key('patient_opd_number_input')), findsOneWidget);
+      expect(find.byKey(const Key('save_patient_button')), findsOneWidget);
+
+      // Trigger empty submit to test validation
+      await tester.tap(find.byKey(const Key('save_patient_button')));
+      await tester.pumpAndSettle();
+      expect(find.text('Patient name is required'), findsOneWidget);
     });
   });
 }

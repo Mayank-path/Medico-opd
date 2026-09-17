@@ -117,9 +117,14 @@ void main() {
         .eq('auth_user_id', user.id)
         .maybeSingle();
 
+    String doctorId;
+    String clinicId;
+
     if (doc != null) {
+      doctorId = doc['id'] as String;
+      clinicId = doc['clinic_id'] as String;
       print(
-        'Test doctor profile already exists (Doctor ID: ${doc['id']}, Clinic ID: ${doc['clinic_id']}, Name: ${doc['full_name']}). Reusing existing account.',
+        'Test doctor profile already exists (Doctor ID: $doctorId, Clinic ID: $clinicId, Name: ${doc['full_name']}). Reusing existing account.',
       );
     } else {
       print(
@@ -150,8 +155,66 @@ void main() {
         },
       );
       print('Provisioned clinic and doctor: $rpcRes');
+      doctorId = rpcRes['doctor_id'] as String;
+      clinicId = rpcRes['clinic_id'] as String;
     }
 
-    print('SUCCESS: Test doctor account is ready for automated UI capture.');
+    // Ensure sample patient exists for Apex Care Clinic
+    final existingPatient = await adminClient
+        .from('patients')
+        .select()
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+
+    String patientId;
+    if (existingPatient != null) {
+      patientId = existingPatient['id'] as String;
+      print('CI test patient already exists ($patientId).');
+    } else {
+      print('Provisioning initial CI test patient for Apex Care Clinic...');
+      final newPat = await adminClient
+          .from('patients')
+          .insert({
+            'clinic_id': clinicId,
+            'full_name': 'Sunita Verma',
+            'dob_or_age': '42 yrs',
+            'sex': 'Female',
+            'contact_info': '+91-9876543210',
+            'opd_number': 'OPD-2026-0042',
+            'created_by': doctorId,
+          })
+          .select()
+          .single();
+      patientId = newPat['id'] as String;
+      print('Provisioned patient $patientId.');
+    }
+
+    // Ensure sample consultation exists
+    final existingCons = await adminClient
+        .from('consultations')
+        .select()
+        .eq('patient_id', patientId)
+        .maybeSingle();
+
+    if (existingCons != null) {
+      print('CI test consultation already exists (${existingCons['id']}).');
+    } else {
+      print('Provisioning initial CI test consultation...');
+      final newCons = await adminClient
+          .from('consultations')
+          .insert({
+            'patient_id': patientId,
+            'doctor_id': doctorId,
+            'clinic_id': clinicId,
+            'status': 'in_progress',
+          })
+          .select()
+          .single();
+      print('Provisioned consultation ${newCons['id']}.');
+    }
+
+    print(
+      'SUCCESS: Test doctor account, patient, and consultation ready for automated UI capture.',
+    );
   });
 }

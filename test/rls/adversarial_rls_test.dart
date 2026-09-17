@@ -156,12 +156,14 @@ void main() {
     () {
       late SupabaseClient clientA;
       late SupabaseClient clientB;
+      late SupabaseClient clientC;
       SupabaseClient? adminClient;
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final emailA = 'dr.alice.test.$timestamp@gmail.com';
       final emailB = 'dr.bob.test.$timestamp@gmail.com';
       final emailC = 'dr.charlie.test.$timestamp@gmail.com';
+      final emailColleague = 'dr.colleague.test.$timestamp@gmail.com';
       const password = 'SecurePassword123!';
 
       String? clinicAId;
@@ -170,8 +172,12 @@ void main() {
       String? clinicBId;
       String? doctorBId;
 
+      String? doctorCId;
+
       final createdUserIds = <String>[];
       final createdClinicIds = <String>[];
+      final createdPatientIds = <String>[];
+      final createdConsultationIds = <String>[];
       int baselineUserCount = 0;
 
       Future<void> provisionTestDoctor({
@@ -272,10 +278,63 @@ void main() {
         clinicBId = rpcRespB['clinic_id'] as String;
         doctorBId = rpcRespB['doctor_id'] as String;
         createdClinicIds.add(clinicBId!);
+
+        // 5. Provision pre-confirmed Doctor C in the SAME clinic as Doctor A (Clinic Alpha)
+        clientC = SupabaseClient(
+          testSupabaseUrl,
+          testSupabaseAnonKey,
+          authOptions: const AuthClientOptions(
+            authFlowType: AuthFlowType.implicit,
+          ),
+        );
+        final adminUserC = await adminClient!.auth.admin.createUser(
+          AdminUserAttributes(
+            email: emailColleague,
+            password: password,
+            emailConfirm: true,
+          ),
+        );
+        expect(adminUserC.user, isNotNull);
+        createdUserIds.add(adminUserC.user!.id);
+
+        final docCRes = await adminClient!
+            .from('doctors')
+            .insert({
+              'auth_user_id': adminUserC.user!.id,
+              'clinic_id': clinicAId,
+              'full_name': 'Dr. Charlie Colleague',
+              'qualifications': 'MBBS',
+              'registration_number': 'DMC-30003',
+              'contact_info': '+91-9876500000',
+            })
+            .select()
+            .single();
+        doctorCId = docCRes['id'] as String;
+
+        await clientC.auth.signInWithPassword(
+          email: emailColleague,
+          password: password,
+        );
       });
 
       tearDownAll(() async {
         if (adminClient == null) return;
+
+        // Clean up all test consultations created during the run
+        for (final cid in List<String>.from(createdConsultationIds)) {
+          try {
+            await adminClient!.from('consultations').delete().eq('id', cid);
+          } catch (_) {}
+        }
+        createdConsultationIds.clear();
+
+        // Clean up all test patients created during the run
+        for (final pid in List<String>.from(createdPatientIds)) {
+          try {
+            await adminClient!.from('patients').delete().eq('id', pid);
+          } catch (_) {}
+        }
+        createdPatientIds.clear();
 
         // Clean up all test users created during the run (cascades doctors)
         for (final uid in List<String>.from(createdUserIds)) {
@@ -517,6 +576,395 @@ void main() {
             .select()
             .eq('name', 'Orphan Clinic Test $timestamp');
         expect(searchB, isEmpty);
+      });
+
+      test('ADVERSARIAL 10: Cross-Tenant Patient Isolation - Doctor B cannot SELECT or UPDATE Doctor A patient', () async {
+        // Doctor A creates a patient in Clinic A
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient Alpha 10 $timestamp',
+              'dob_or_age': '30 yrs',
+              'sex': 'Male',
+              'opd_number': 'OPD-A-010',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        // Doctor B queries patients in Clinic A
+        final selectB = await clientB
+            .from('patients')
+            .select()
+            .eq('id', patAId);
+        expect(
+          selectB,
+          isEmpty,
+          reason: 'RLS must hide Doctor A patient from Doctor B',
+        );
+
+        // Doctor B attempts to UPDATE Doctor A patient
+        final updateB = await clientB
+            .from('patients')
+            .update({'full_name': 'Hacked Name'})
+            .eq('id', patAId)
+            .select();
+        expect(
+          updateB,
+          isEmpty,
+          reason: 'RLS must deny Doctor B from updating Doctor A patient',
+        );
+
+        // Verify patient name remains unchanged
+        final verifyA = await clientA
+            .from('patients')
+            .select()
+            .eq('id', patAId)
+            .single();
+        expect(verifyA['full_name'], 'Patient Alpha 10 $timestamp');
+      });
+
+      test('ADVERSARIAL 11: Cross-Tenant Patient Creation - Doctor A cannot INSERT patient for Clinic B', () async {
+        expect(
+          () async {
+            await clientA.from('patients').insert({
+              'clinic_id': clinicBId,
+              'full_name': 'Malicious Patient $timestamp',
+            }).select();
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.toLowerCase().contains('row-level security') ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Doctor A inserting with Clinic B id must be blocked by RLS WITH CHECK',
+        );
+      });
+
+      test('ADVERSARIAL 12: Column Grant Protection - Updating clinic_id or created_by on patients is denied', () async {
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient Column Test 12 $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        // Doctor A attempts to reassign clinic_id
+        expect(
+          () async {
+            await clientA
+                .from('patients')
+                .update({'clinic_id': clinicBId})
+                .eq('id', patAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains('permission denied for table patients') ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant on patients must prevent client mutation of clinic_id',
+        );
+
+        // Doctor A attempts to reassign created_by
+        expect(
+          () async {
+            await clientA
+                .from('patients')
+                .update({'created_by': doctorBId})
+                .eq('id', patAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains('permission denied for table patients') ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant on patients must prevent client mutation of created_by',
+        );
+      });
+
+      test('ADVERSARIAL 13: Cross-Tenant Consultation Isolation - Doctor B cannot SELECT or UPDATE Doctor A consultation', () async {
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient Consultation 13 $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        final consAResp = await clientA
+            .from('consultations')
+            .insert({
+              'patient_id': patAId,
+              'doctor_id': doctorAId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            })
+            .select()
+            .single();
+        final consAId = consAResp['id'] as String;
+        createdConsultationIds.add(consAId);
+
+        // Doctor B attempts to view Consultation A
+        final selectB = await clientB
+            .from('consultations')
+            .select()
+            .eq('id', consAId);
+        expect(
+          selectB,
+          isEmpty,
+          reason: 'RLS must hide Clinic A consultations from Doctor B',
+        );
+
+        // Doctor B attempts to update Consultation A
+        final updateB = await clientB
+            .from('consultations')
+            .update({'status': 'completed'})
+            .eq('id', consAId)
+            .select();
+        expect(
+          updateB,
+          isEmpty,
+          reason: 'RLS must block Doctor B from updating Clinic A consultation',
+        );
+      });
+
+      test('ADVERSARIAL 14: Cross-Clinic Consistency Trigger - Mismatched doctor/patient/clinic is rejected at DB layer', () async {
+        // Patient A in Clinic A
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient A for Trigger 14 $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        // Patient B in Clinic B
+        final patBResp = await clientB
+            .from('patients')
+            .insert({
+              'clinic_id': clinicBId,
+              'full_name': 'Patient B for Trigger 14 $timestamp',
+              'created_by': doctorBId,
+            })
+            .select()
+            .single();
+        final patBId = patBResp['id'] as String;
+        createdPatientIds.add(patBId);
+
+        // Attempt 1: Doctor A (Clinic A) tries to create consultation for Patient B (Clinic B) within Clinic A
+        expect(
+          () async {
+            await clientA.from('consultations').insert({
+              'patient_id': patBId,
+              'doctor_id': doctorAId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            });
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'Consultation patient does not belong to the consultation clinic',
+                      ) ||
+                      e.code == '23514' ||
+                      e.code == 'P0001'),
+            ),
+          ),
+          reason: 'Trigger must reject consultation when patient does not belong to consultation clinic',
+        );
+
+        // Attempt 2: Using admin client (bypassing RLS), attempt to pair Doctor B with Patient A in Clinic A
+        expect(
+          () async {
+            await adminClient!.from('consultations').insert({
+              'patient_id': patAId,
+              'doctor_id': doctorBId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            });
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'Consultation doctor does not belong to the consultation clinic',
+                      ) ||
+                      e.code == '23514' ||
+                      e.code == 'P0001'),
+            ),
+          ),
+          reason: 'Trigger must reject consultation when doctor does not belong to consultation clinic',
+        );
+      });
+
+      test('ADVERSARIAL 15: Column Grant Protection - Mutating clinic_id, doctor_id, or patient_id on consultations is denied', () async {
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient 15 $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        final consAResp = await clientA
+            .from('consultations')
+            .insert({
+              'patient_id': patAId,
+              'doctor_id': doctorAId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            })
+            .select()
+            .single();
+        final consAId = consAResp['id'] as String;
+        createdConsultationIds.add(consAId);
+
+        // Attempt to mutate clinic_id
+        expect(
+          () async {
+            await clientA
+                .from('consultations')
+                .update({'clinic_id': clinicBId})
+                .eq('id', consAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'permission denied for table consultations',
+                      ) ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant on consultations must prevent mutation of clinic_id',
+        );
+
+        // Attempt to mutate doctor_id
+        expect(
+          () async {
+            await clientA
+                .from('consultations')
+                .update({'doctor_id': doctorBId})
+                .eq('id', consAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'permission denied for table consultations',
+                      ) ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant on consultations must prevent mutation of doctor_id',
+        );
+
+        // Attempt to mutate patient_id
+        expect(
+          () async {
+            await clientA
+                .from('consultations')
+                .update({'patient_id': '00000000-0000-0000-0000-000000000000'})
+                .eq('id', consAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'permission denied for table consultations',
+                      ) ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant on consultations must prevent mutation of patient_id',
+        );
+      });
+
+      test('ADVERSARIAL 16 (Positive Case): Same-Clinic Cross-Doctor Attribution - Doctor A can create records attributed to colleague Doctor C', () async {
+        // Doctor A, authenticated in Clinic A, creates a patient attributed to colleague Doctor C (same clinic)
+        final patA2Resp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Walk-in Patient for Dr Charlie $timestamp',
+              'created_by': doctorCId,
+            })
+            .select()
+            .single();
+        final patA2Id = patA2Resp['id'] as String;
+        createdPatientIds.add(patA2Id);
+
+        expect(patA2Resp['created_by'], doctorCId);
+        expect(patA2Resp['clinic_id'], clinicAId);
+
+        // Doctor A creates a consultation with doctor_id = Doctor C (same clinic)
+        final consA2Resp = await clientA
+            .from('consultations')
+            .insert({
+              'patient_id': patA2Id,
+              'doctor_id': doctorCId,
+              'clinic_id': clinicAId,
+              'status': 'in_progress',
+            })
+            .select()
+            .single();
+        final consA2Id = consA2Resp['id'] as String;
+        createdConsultationIds.add(consA2Id);
+
+        expect(consA2Resp['doctor_id'], doctorCId);
+        expect(consA2Resp['clinic_id'], clinicAId);
+        expect(consA2Resp['status'], 'in_progress');
+
+        // Colleague Doctor C can view and update the consultation
+        final selectC = await clientC
+            .from('consultations')
+            .select()
+            .eq('id', consA2Id)
+            .single();
+        expect(selectC['id'], consA2Id);
+
+        final updateC = await clientC
+            .from('consultations')
+            .update({'status': 'completed'})
+            .eq('id', consA2Id)
+            .select()
+            .single();
+        expect(updateC['status'], 'completed');
       });
 
       test('REFINEMENT 1 VERIFICATION: Deleting clinic before doctor fails with foreign key violation', () async {

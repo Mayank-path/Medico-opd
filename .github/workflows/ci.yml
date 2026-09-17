@@ -111,7 +111,8 @@ jobs:
             --dart-define=SUPABASE_TEST_URL="${SUPABASE_TEST_URL}" \
             --dart-define=SUPABASE_TEST_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
             --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
-            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
+            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}" \
+            --dart-define=CI_CAPTURE_FLOW="true"
 
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
@@ -148,16 +149,36 @@ jobs:
             adb install build/app/outputs/flutter-apk/app-debug.apk
             adb shell am start -n com.medico.opd.medico_opd/.MainActivity
             # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-            sleep 35
+            sleep 25
             adb exec-out screencap -p > screenshot_clinic_profile_android.png
-            cp screenshot_clinic_profile_android.png screenshot_android.png
-            ls -lh screenshot_clinic_profile_android.png
+            # Allow time for auto-navigation to PatientListScreen
+            sleep 15
+            adb exec-out screencap -p > screenshot_patient_list_android.png
+            # Allow time for auto-navigation to ConsultationHistoryScreen
+            sleep 15
+            adb exec-out screencap -p > screenshot_consultation_android.png
+            cp screenshot_patient_list_android.png screenshot_android.png
+            ls -lh screenshot_*android.png
 
       - name: Upload Android Clinic Profile Screenshot
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_clinic_profile_android
           path: screenshot_clinic_profile_android.png
+          if-no-files-found: error
+
+      - name: Upload Android Patient List Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_patient_list_android
+          path: screenshot_patient_list_android.png
+          if-no-files-found: error
+
+      - name: Upload Android Consultation Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_consultation_android
+          path: screenshot_consultation_android.png
           if-no-files-found: error
 
       - name: Upload Android Screenshot (Legacy Alias)
@@ -221,7 +242,8 @@ jobs:
             --dart-define=SUPABASE_TEST_URL="${SUPABASE_TEST_URL}" \
             --dart-define=SUPABASE_TEST_ANON_KEY="${SUPABASE_TEST_ANON_KEY}" \
             --dart-define=CI_TEST_DOCTOR_EMAIL="${CI_TEST_DOCTOR_EMAIL}" \
-            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}"
+            --dart-define=CI_TEST_DOCTOR_PASSWORD="${CI_TEST_DOCTOR_PASSWORD}" \
+            --dart-define=CI_CAPTURE_FLOW="true"
 
           # 3. Locate app bundle and install
           APP_PATH=$(find build/ios/iphonesimulator -name "*.app" -maxdepth 2 | head -n 1)
@@ -231,18 +253,36 @@ jobs:
           # 4. Launch app
           xcrun simctl launch "$UDID" com.medico.opd.medicoOpd
           # Allow time for app launch, kDebugMode auto-login, real Supabase auth & RLS profile fetch
-          sleep 45
-
-          # 5. Capture screenshot
+          sleep 35
           xcrun simctl io "$UDID" screenshot screenshot_clinic_profile_ios.png
-          cp screenshot_clinic_profile_ios.png screenshot_ios.png
-          ls -lh screenshot_clinic_profile_ios.png
+          # Allow time for auto-navigation to PatientListScreen
+          sleep 15
+          xcrun simctl io "$UDID" screenshot screenshot_patient_list_ios.png
+          # Allow time for auto-navigation to ConsultationHistoryScreen
+          sleep 15
+          xcrun simctl io "$UDID" screenshot screenshot_consultation_ios.png
+          cp screenshot_patient_list_ios.png screenshot_ios.png
+          ls -lh screenshot_*ios.png
 
       - name: Upload iOS Clinic Profile Screenshot
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_clinic_profile_ios
           path: screenshot_clinic_profile_ios.png
+          if-no-files-found: error
+
+      - name: Upload iOS Patient List Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_patient_list_ios
+          path: screenshot_patient_list_ios.png
+          if-no-files-found: error
+
+      - name: Upload iOS Consultation Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_consultation_ios
+          path: screenshot_consultation_ios.png
           if-no-files-found: error
 
       - name: Upload iOS Screenshot (Legacy Alias)

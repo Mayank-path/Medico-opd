@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../auth/services/auth_service.dart';
+import '../../patient/screens/patient_list_screen.dart';
 import '../models/clinic_model.dart';
 import '../models/doctor_model.dart';
 import '../services/clinic_service.dart';
@@ -90,6 +91,22 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
         _isOnboardingIncomplete = false;
         _isLoading = false;
       });
+
+      if (const bool.fromEnvironment('CI_CAPTURE_FLOW', defaultValue: false)) {
+        Future.delayed(const Duration(seconds: 8), () {
+          if (mounted && _clinic != null && _doctor != null) {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PatientListScreen(
+                  clinicId: _clinic!.id,
+                  doctorId: _doctor!.id,
+                  clinicName: _clinic!.name,
+                ),
+              ),
+            );
+          }
+        });
+      }
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -321,6 +338,84 @@ class _ClinicProfileScreenState extends State<ClinicProfileScreen> {
                   'Clinic ID',
                   clinic.id,
                   keyName: 'clinic_id_text',
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Patient Directory & Consultations Action Card
+        Card(
+          color: const Color(0xFFE6F4F1),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFF007A78), width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.people_alt,
+                      color: Color(0xFF007A78),
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Patient Directory & OPD',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF003B3A),
+                                ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Manage clinic patients and active consultations',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    key: const Key('open_patient_directory_button'),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PatientListScreen(
+                            clinicId: clinic.id,
+                            doctorId: doctor.id,
+                            clinicName: clinic.name,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text('Open Patient Directory'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF007A78),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
