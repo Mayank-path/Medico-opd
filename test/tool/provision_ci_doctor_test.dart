@@ -160,11 +160,14 @@ void main() {
     }
 
     // Ensure sample patient exists for Apex Care Clinic
-    final existingPatient = await adminClient
+    final existingPatients = await adminClient
         .from('patients')
         .select()
         .eq('clinic_id', clinicId)
-        .maybeSingle();
+        .eq('full_name', 'Sunita Verma')
+        .limit(1);
+    final existingPatient =
+        existingPatients.isNotEmpty ? existingPatients.first : null;
 
     String patientId;
     if (existingPatient != null) {
@@ -190,14 +193,14 @@ void main() {
     }
 
     // Ensure sample consultation exists
-    final existingCons = await adminClient
+    final existingConsList = await adminClient
         .from('consultations')
         .select()
         .eq('patient_id', patientId)
-        .maybeSingle();
+        .limit(1);
 
-    if (existingCons != null) {
-      print('CI test consultation already exists (${existingCons['id']}).');
+    if (existingConsList.isNotEmpty) {
+      print('CI test consultation already exists (${existingConsList.first['id']}).');
     } else {
       print('Provisioning initial CI test consultation...');
       final newCons = await adminClient

@@ -967,6 +967,169 @@ void main() {
         expect(updateC['status'], 'completed');
       });
 
+      test('ADVERSARIAL 17: Patient Edit Flow - Permitted column updates succeed under RLS, while mutating immutable id/clinic_id fails', () async {
+        // 1. Doctor A creates patient in Clinic A
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Original Name 17 $timestamp',
+              'dob_or_age': '29 yrs',
+              'sex': 'Male',
+              'contact_info': '+91-9876500017',
+              'opd_number': 'OPD-17-ORIG',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        // 2. Doctor A performs legitimate edit on all permitted columns
+        final updatedA = await clientA
+            .from('patients')
+            .update({
+              'full_name': 'Corrected Name 17 $timestamp',
+              'dob_or_age': '30 yrs',
+              'sex': 'Female',
+              'contact_info': '+91-9876599917',
+              'opd_number': 'OPD-17-EDIT',
+            })
+            .eq('id', patAId)
+            .select()
+            .single();
+
+        expect(updatedA['full_name'], 'Corrected Name 17 $timestamp');
+        expect(updatedA['dob_or_age'], '30 yrs');
+        expect(updatedA['sex'], 'Female');
+        expect(updatedA['contact_info'], '+91-9876599917');
+        expect(updatedA['opd_number'], 'OPD-17-EDIT');
+        expect(updatedA['clinic_id'], clinicAId, reason: 'clinic_id remains unchanged');
+        expect(updatedA['id'], patAId, reason: 'patient id remains unchanged');
+
+        // 3. Doctor A attempts to mutate clinic_id in update payload -> rejected by column grant
+        expect(
+          () async {
+            await clientA
+                .from('patients')
+                .update({'clinic_id': clinicBId})
+                .eq('id', patAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains('permission denied for table patients') ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Client cannot mutate clinic_id via update',
+        );
+
+        // 4. Foreign Doctor B attempts to update Doctor A patient -> blocked by RLS
+        final updateB = await clientB
+            .from('patients')
+            .update({'full_name': 'Hacked By Doctor B'})
+            .eq('id', patAId)
+            .select();
+        expect(updateB, isEmpty, reason: 'RLS prevents foreign clinic doctor from updating patient');
+      });
+
+      test('ADVERSARIAL 18: Consultation Lifecycle - Draft-first creation, status progression, and check constraint enforcement', () async {
+        // 1. Patient in Clinic A
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient Lifecycle 18 $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        // 2. Doctor A creates consultation with default status 'draft'
+        final consDraft = await clientA
+            .from('consultations')
+            .insert({
+              'patient_id': patAId,
+              'doctor_id': doctorAId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            })
+            .select()
+            .single();
+        final consAId = consDraft['id'] as String;
+        createdConsultationIds.add(consAId);
+
+        expect(consDraft['status'], 'draft');
+        expect(consDraft['ended_at'], isNull);
+
+        // 3. Transition draft -> in_progress (Begin Consultation)
+        final consInProgress = await clientA
+            .from('consultations')
+            .update({'status': 'in_progress'})
+            .eq('id', consAId)
+            .select()
+            .single();
+        expect(consInProgress['status'], 'in_progress');
+
+        // 4. Transition in_progress -> completed with ended_at timestamp
+        final endedTime = DateTime.now().toIso8601String();
+        final consCompleted = await clientA
+            .from('consultations')
+            .update({
+              'status': 'completed',
+              'ended_at': endedTime,
+            })
+            .eq('id', consAId)
+            .select()
+            .single();
+        expect(consCompleted['status'], 'completed');
+        expect(consCompleted['ended_at'], isNotNull);
+
+        // 5. Attempt invalid status transition rejected by CHECK constraint
+        expect(
+          () async {
+            await clientA
+                .from('consultations')
+                .update({'status': 'cancelled'})
+                .eq('id', consAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains('violates check constraint') ||
+                      e.code == '23514'),
+            ),
+          ),
+          reason: 'PostgreSQL status CHECK constraint must reject non-allowed statuses',
+        );
+
+        // 6. Attempt mutation of doctor_id during lifecycle update rejected by column grants
+        expect(
+          () async {
+            await clientA
+                .from('consultations')
+                .update({'doctor_id': doctorBId})
+                .eq('id', consAId);
+          },
+          throwsA(
+            predicate(
+              (e) =>
+                  e is PostgrestException &&
+                  (e.message.contains(
+                        'permission denied for table consultations',
+                      ) ||
+                      e.code == '42501'),
+            ),
+          ),
+          reason: 'Column grant revokes doctor_id updates on consultations',
+        );
+      });
+
       test('REFINEMENT 1 VERIFICATION: Deleting clinic before doctor fails with foreign key violation', () async {
         final emailDemo = 'dr.fkdemo.test.$timestamp@gmail.com';
         final userResp = await adminClient!.auth.admin.createUser(
