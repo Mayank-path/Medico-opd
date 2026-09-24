@@ -1,0 +1,4 @@
+# Gitleaks ignore file
+# Format: [rule-id]:[path]:[commit-or-fingerprint] or exact fingerprints
+dead2903c71079de443760a46435d459f335b537:.github/workflows/ci.yml:generic-api-key:40
+beeca478c0dd16b8596bbd4692734de4f8ce83c9:test/rls/adversarial_rls_test.dart:generic-api-key:6
