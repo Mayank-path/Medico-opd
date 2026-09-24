@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/test/ci_flow_coordinator.dart';
 import '../../consultation/screens/consultation_history_screen.dart';
+import '../../consultation/screens/new_consultation_screen.dart';
 import '../../consultation/services/consultation_service.dart';
 import '../models/patient_model.dart';
 import '../services/patient_service.dart';
 import 'add_patient_screen.dart';
+import 'edit_patient_screen.dart';
 
 class PatientListScreen extends StatefulWidget {
   final String clinicId;
@@ -33,56 +37,69 @@ class _PatientListScreenState extends State<PatientListScreen> {
   late final ConsultationService _consultationService;
 
   final _searchController = TextEditingController();
+  Timer? _debounceTimer;
+
+  static const int _pageSize = 20;
+  int _currentOffset = 0;
+  bool _hasMore = true;
   bool _isLoading = true;
+  bool _isLoadingMore = false;
   String? _errorMessage;
-  List<PatientModel> _allPatients = [];
-  List<PatientModel> _filteredPatients = [];
+  List<PatientModel> _patients = [];
 
   @override
   void initState() {
     super.initState();
     _patientService = widget.patientService ?? PatientService();
     _consultationService = widget.consultationService ?? ConsultationService();
-    _searchController.addListener(_filterPatients);
-    _loadPatients();
+    _searchController.addListener(_onSearchChanged);
+    _loadPatients(refresh: true);
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
-  void _filterPatients() {
-    final query = _searchController.text.toLowerCase().trim();
-    if (query.isEmpty) {
-      setState(() => _filteredPatients = _allPatients);
-    } else {
-      setState(() {
-        _filteredPatients = _allPatients.where((p) {
-          final matchName = p.fullName.toLowerCase().contains(query);
-          final matchOpd = p.opdNumber?.toLowerCase().contains(query) ?? false;
-          final matchContact =
-              p.contactInfo?.toLowerCase().contains(query) ?? false;
-          return matchName || matchOpd || matchContact;
-        }).toList();
-      });
-    }
+  void _onSearchChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
+      _loadPatients(refresh: true);
+    });
   }
 
-  Future<void> _loadPatients() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadPatients({bool refresh = false}) async {
+    if (refresh) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+        _currentOffset = 0;
+        _hasMore = true;
+      });
+    }
 
     try {
-      final list = await _patientService.fetchPatients();
+      final query = _searchController.text.trim();
+      final list = await _patientService.fetchPatients(
+        limit: _pageSize,
+        offset: refresh ? 0 : _currentOffset,
+        searchQuery: query.isNotEmpty ? query : null,
+      );
+
       if (mounted) {
         setState(() {
-          _allPatients = list;
-          _filterPatients();
+          if (refresh) {
+            _patients = list;
+          } else {
+            _patients.addAll(list);
+          }
+
+          _currentOffset = _patients.length;
+          _hasMore = list.length >= _pageSize;
           _isLoading = false;
+          _isLoadingMore = false;
         });
 
         if (kDebugMode &&
@@ -93,8 +110,8 @@ class _PatientListScreenState extends State<PatientListScreen> {
           CiFlowCoordinator.registerScreen(
             screenName: 'patient_list',
             onAdvance: () {
-              if (mounted && _allPatients.isNotEmpty) {
-                _navigateToConsultations(_allPatients.first);
+              if (mounted && _patients.isNotEmpty) {
+                _navigateToEditPatientForCi(_patients.first);
               }
             },
           );
@@ -104,10 +121,37 @@ class _PatientListScreenState extends State<PatientListScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLoadingMore = false;
           _errorMessage = 'Failed to load patients: $e';
         });
       }
     }
+  }
+
+  Future<void> _loadMorePatients() async {
+    if (_isLoadingMore || !_hasMore || _isLoading) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    await _loadPatients(refresh: false);
+  }
+
+  void _navigateToEditPatientForCi(PatientModel patient) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditPatientScreen(
+          patient: patient,
+          patientService: _patientService,
+        ),
+      ),
+    ).then((_) {
+      // When edit screen pops via CI advance, continue CI flow to consultation history
+      if (mounted && _patients.isNotEmpty) {
+        _navigateToConsultations(_patients.first);
+      }
+    });
   }
 
   Future<void> _navigateToAddPatient() async {
@@ -123,8 +167,28 @@ class _PatientListScreenState extends State<PatientListScreen> {
 
     if (newPatient != null && mounted) {
       setState(() {
-        _allPatients.insert(0, newPatient);
-        _filterPatients();
+        _patients.insert(0, newPatient);
+        _currentOffset++;
+      });
+    }
+  }
+
+  Future<void> _navigateToEditPatient(PatientModel patient) async {
+    final updated = await Navigator.of(context).push<PatientModel>(
+      MaterialPageRoute(
+        builder: (_) => EditPatientScreen(
+          patient: patient,
+          patientService: _patientService,
+        ),
+      ),
+    );
+
+    if (updated != null && mounted) {
+      setState(() {
+        final index = _patients.indexWhere((p) => p.id == updated.id);
+        if (index != -1) {
+          _patients[index] = updated;
+        }
       });
     }
   }
@@ -142,27 +206,20 @@ class _PatientListScreenState extends State<PatientListScreen> {
     );
   }
 
-  Future<void> _startQuickConsultation(PatientModel patient) async {
-    try {
-      await _consultationService.createConsultation(
-        patientId: patient.id,
-        doctorId: widget.doctorId,
-        clinicId: widget.clinicId,
-        status: 'in_progress',
-      );
+  Future<void> _startConsultationFlow(PatientModel patient) async {
+    final newConsultation = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NewConsultationScreen(
+          patient: patient,
+          clinicId: widget.clinicId,
+          doctorId: widget.doctorId,
+          consultationService: _consultationService,
+        ),
+      ),
+    );
 
-      if (mounted) {
-        _navigateToConsultations(patient);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to start consultation: $e'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
-      }
+    if (newConsultation != null && mounted) {
+      _navigateToConsultations(patient);
     }
   }
 
@@ -193,7 +250,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
-            onPressed: _loadPatients,
+            onPressed: () => _loadPatients(refresh: true),
           ),
         ],
       ),
@@ -219,7 +276,10 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear),
-                        onPressed: () => _searchController.clear(),
+                        onPressed: () {
+                          _searchController.clear();
+                          _loadPatients(refresh: true);
+                        },
                       )
                     : null,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -233,7 +293,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
             ),
           ),
 
-          // Patients List
+          // Patients List & Pagination
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -248,13 +308,13 @@ class _PatientListScreenState extends State<PatientListScreen> {
                         ),
                         const SizedBox(height: 8),
                         ElevatedButton(
-                          onPressed: _loadPatients,
+                          onPressed: () => _loadPatients(refresh: true),
                           child: const Text('Retry'),
                         ),
                       ],
                     ),
                   )
-                : _filteredPatients.isEmpty
+                : _patients.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -289,17 +349,43 @@ class _PatientListScreenState extends State<PatientListScreen> {
                     ),
                   )
                 : RefreshIndicator(
-                    onRefresh: _loadPatients,
+                    onRefresh: () => _loadPatients(refresh: true),
                     child: ListView.separated(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 8,
                       ),
-                      itemCount: _filteredPatients.length,
+                      itemCount: _patients.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: 10),
                       itemBuilder: (context, index) {
-                        final patient = _filteredPatients[index];
+                        if (index == _patients.length) {
+                          // Load more pagination footer
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16.0),
+                            child: Center(
+                              child: _isLoadingMore
+                                  ? const SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : OutlinedButton.icon(
+                                      key: const Key('load_more_patients_button'),
+                                      onPressed: _loadMorePatients,
+                                      icon: const Icon(Icons.expand_more),
+                                      label: const Text('Load More Patients'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: brandTeal,
+                                      ),
+                                    ),
+                            ),
+                          );
+                        }
+
+                        final patient = _patients[index];
 
                         return Card(
                           key: Key('patient_card_${patient.id}'),
@@ -383,6 +469,17 @@ class _PatientListScreenState extends State<PatientListScreen> {
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
                                     TextButton.icon(
+                                      key: Key('edit_patient_${patient.id}'),
+                                      onPressed: () =>
+                                          _navigateToEditPatient(patient),
+                                      icon: const Icon(Icons.edit_outlined, size: 18),
+                                      label: const Text('Edit'),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.grey.shade800,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    TextButton.icon(
                                       key: Key('view_history_${patient.id}'),
                                       onPressed: () =>
                                           _navigateToConsultations(patient),
@@ -398,7 +495,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
                                         'start_consultation_${patient.id}',
                                       ),
                                       onPressed: () =>
-                                          _startQuickConsultation(patient),
+                                          _startConsultationFlow(patient),
                                       icon: const Icon(
                                         Icons.play_arrow,
                                         size: 18,

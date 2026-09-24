@@ -8,8 +8,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  security-secret-scan:
+    name: Secret Leak Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: true
+
   analyze-and-test:
     name: Static Analysis & Unit/Widget Tests
+    needs: security-secret-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -29,6 +45,8 @@ jobs:
 
       - name: Prepare environment configuration
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           SUPABASE_TEST_URL: ${{ secrets.SUPABASE_TEST_URL }}
           SUPABASE_TEST_ANON_KEY: ${{ secrets.SUPABASE_TEST_ANON_KEY }}
           SUPABASE_TEST_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_TEST_SERVICE_ROLE_KEY }}
@@ -36,15 +54,14 @@ jobs:
           CI_TEST_DOCTOR_PASSWORD: ${{ secrets.CI_TEST_DOCTOR_PASSWORD || 'SecureTestPass123!' }}
         run: |
           cat <<EOF > .env
-          SUPABASE_URL=https://dyfrknwejqwilstcoytt.supabase.co
-          SUPABASE_ANON_KEY=sb_publishable_jBV_X6q8QXB4gIRSeny0GA_YnMwkNcT
+          SUPABASE_URL=${SUPABASE_URL}
+          SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
           SUPABASE_TEST_URL=${SUPABASE_TEST_URL}
           SUPABASE_TEST_ANON_KEY=${SUPABASE_TEST_ANON_KEY}
           SUPABASE_TEST_SERVICE_ROLE_KEY=${SUPABASE_TEST_SERVICE_ROLE_KEY}
           CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
           CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
           EOF
-          cat .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -160,11 +177,25 @@ jobs:
           path: screenshot_patient_list_android.png
           if-no-files-found: error
 
+      - name: Upload Android Edit Patient Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_edit_patient_android
+          path: screenshot_edit_patient_android.png
+          if-no-files-found: error
+
       - name: Upload Android Consultation Screenshot
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_consultation_android
           path: screenshot_consultation_android.png
+          if-no-files-found: error
+
+      - name: Upload Android New Consultation Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_new_consultation_android
+          path: screenshot_new_consultation_android.png
           if-no-files-found: error
 
   build-ios:
@@ -255,7 +286,19 @@ jobs:
           echo "Capturing screenshot_patient_list_ios.png..."
           xcrun simctl io "$UDID" screenshot screenshot_patient_list_ios.png
 
-          echo "=== Step 3: Advancing to ConsultationHistoryScreen ==="
+          echo "=== Step 3: Advancing to EditPatientScreen ==="
+          curl -s -m 5 http://127.0.0.1:8888/next || true
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+            echo "Attempt $i: App status is '$STATUS'"
+            if [ "$STATUS" = "edit_patient" ]; then break; fi
+            sleep 1
+          done
+          sleep 2
+          echo "Capturing screenshot_edit_patient_ios.png..."
+          xcrun simctl io "$UDID" screenshot screenshot_edit_patient_ios.png
+
+          echo "=== Step 4: Advancing to ConsultationHistoryScreen ==="
           curl -s -m 5 http://127.0.0.1:8888/next || true
           for i in $(seq 1 30); do
             STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
@@ -266,6 +309,18 @@ jobs:
           sleep 2
           echo "Capturing screenshot_consultation_ios.png..."
           xcrun simctl io "$UDID" screenshot screenshot_consultation_ios.png
+
+          echo "=== Step 5: Advancing to NewConsultationScreen ==="
+          curl -s -m 5 http://127.0.0.1:8888/next || true
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+            echo "Attempt $i: App status is '$STATUS'"
+            if [ "$STATUS" = "new_consultation" ]; then break; fi
+            sleep 1
+          done
+          sleep 2
+          echo "Capturing screenshot_new_consultation_ios.png..."
+          xcrun simctl io "$UDID" screenshot screenshot_new_consultation_ios.png
 
           ls -lh screenshot_*ios.png
 
@@ -283,9 +338,23 @@ jobs:
           path: screenshot_patient_list_ios.png
           if-no-files-found: error
 
+      - name: Upload iOS Edit Patient Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_edit_patient_ios
+          path: screenshot_edit_patient_ios.png
+          if-no-files-found: error
+
       - name: Upload iOS Consultation Screenshot
         uses: actions/upload-artifact@v4
         with:
           name: screenshot_consultation_ios
           path: screenshot_consultation_ios.png
+          if-no-files-found: error
+
+      - name: Upload iOS New Consultation Screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot_new_consultation_ios
+          path: screenshot_new_consultation_ios.png
           if-no-files-found: error

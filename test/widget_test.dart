@@ -6,7 +6,10 @@ import 'package:medico_opd/features/auth/screens/login_screen.dart';
 import 'package:medico_opd/features/auth/screens/signup_screen.dart';
 import 'package:medico_opd/features/clinic/models/clinic_model.dart';
 import 'package:medico_opd/features/clinic/models/doctor_model.dart';
+import 'package:medico_opd/features/patient/models/patient_model.dart';
 import 'package:medico_opd/features/patient/screens/add_patient_screen.dart';
+import 'package:medico_opd/features/patient/screens/edit_patient_screen.dart';
+import 'package:medico_opd/features/consultation/screens/new_consultation_screen.dart';
 import 'package:medico_opd/main.dart';
 
 void main() {
@@ -194,5 +197,116 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Patient name is required'), findsOneWidget);
     });
+
+    testWidgets(
+      'EditPatientScreen renders pre-populated fields and validates inputs',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockPatient = PatientModel(
+          id: 'patient-abc',
+          clinicId: 'clinic-xyz',
+          fullName: 'Aarav Patel',
+          dobOrAge: '35 yrs',
+          sex: 'Male',
+          contactInfo: '+91 9876543210',
+          opdNumber: 'OPD-2026-0099',
+          createdAt: DateTime.now(),
+          createdBy: 'doc-123',
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: EditPatientScreen(patient: mockPatient),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit Patient Details'), findsOneWidget);
+        expect(find.text('ID: patient-abc'), findsOneWidget);
+        expect(find.byKey(const Key('edit_patient_full_name_input')), findsOneWidget);
+        expect(find.byKey(const Key('edit_patient_age_input')), findsOneWidget);
+        expect(find.byKey(const Key('edit_patient_sex_dropdown')), findsOneWidget);
+        expect(find.byKey(const Key('edit_patient_contact_input')), findsOneWidget);
+        expect(find.byKey(const Key('edit_patient_opd_number_input')), findsOneWidget);
+        expect(find.byKey(const Key('save_patient_changes_button')), findsOneWidget);
+
+        // Verify pre-populated values
+        expect(find.text('Aarav Patel'), findsOneWidget);
+        expect(find.text('35 yrs'), findsOneWidget);
+        expect(find.text('+91 9876543210'), findsOneWidget);
+        expect(find.text('OPD-2026-0099'), findsOneWidget);
+
+        // Clear name and trigger submit to test validation
+        await tester.enterText(
+          find.byKey(const Key('edit_patient_full_name_input')),
+          '',
+        );
+        await tester.tap(find.byKey(const Key('save_patient_changes_button')));
+        await tester.pumpAndSettle();
+        expect(find.text('Patient name is required'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'NewConsultationScreen renders patient summary and default draft status',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final mockPatient = PatientModel(
+          id: 'patient-cons-1',
+          clinicId: 'clinic-cons-1',
+          fullName: 'Meera Deshmukh',
+          dobOrAge: '28 yrs',
+          sex: 'Female',
+          contactInfo: '+91 9123456780',
+          opdNumber: 'OPD-2026-0150',
+          createdAt: DateTime.now(),
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: NewConsultationScreen(
+              patient: mockPatient,
+              clinicId: 'clinic-cons-1',
+              doctorId: 'doc-cons-1',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Start Consultation'), findsOneWidget);
+        expect(find.text('Meera Deshmukh'), findsOneWidget);
+        expect(find.text('OPD-2026-0150'), findsOneWidget);
+        expect(find.text('doc-cons-1'), findsOneWidget);
+        expect(find.text('clinic-cons-1'), findsOneWidget);
+
+        // Verify status selection options
+        expect(find.byKey(const Key('status_draft_radio')), findsOneWidget);
+        expect(find.byKey(const Key('status_in_progress_radio')), findsOneWidget);
+        expect(
+          find.byKey(const Key('create_consultation_submit_button')),
+          findsOneWidget,
+        );
+
+        // Default button label reflects draft
+        expect(find.text('Queue Consultation (Draft)'), findsOneWidget);
+
+        // Tap in-progress and verify button text changes
+        await tester.tap(find.byKey(const Key('status_in_progress_radio')));
+        await tester.pumpAndSettle();
+        expect(find.text('Begin Active OPD (In Progress)'), findsOneWidget);
+      },
+    );
   });
 }

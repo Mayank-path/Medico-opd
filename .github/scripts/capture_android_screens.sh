@@ -31,7 +31,19 @@ sleep 2
 echo "Capturing screenshot_patient_list_android.png..."
 adb exec-out screencap -p > screenshot_patient_list_android.png
 
-echo "=== Step 3: Advancing to ConsultationHistoryScreen ==="
+echo "=== Step 3: Advancing to EditPatientScreen ==="
+curl -s -m 5 http://127.0.0.1:8888/next || true
+for i in $(seq 1 30); do
+  STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+  echo "Attempt $i: App status is '$STATUS'"
+  if [ "$STATUS" = "edit_patient" ]; then break; fi
+  sleep 1
+done
+sleep 2
+echo "Capturing screenshot_edit_patient_android.png..."
+adb exec-out screencap -p > screenshot_edit_patient_android.png
+
+echo "=== Step 4: Advancing to ConsultationHistoryScreen ==="
 curl -s -m 5 http://127.0.0.1:8888/next || true
 for i in $(seq 1 30); do
   STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
@@ -42,6 +54,18 @@ done
 sleep 2
 echo "Capturing screenshot_consultation_android.png..."
 adb exec-out screencap -p > screenshot_consultation_android.png
+
+echo "=== Step 5: Advancing to NewConsultationScreen ==="
+curl -s -m 5 http://127.0.0.1:8888/next || true
+for i in $(seq 1 30); do
+  STATUS=$(curl -s --connect-timeout 2 -m 3 http://127.0.0.1:8888/status || true)
+  echo "Attempt $i: App status is '$STATUS'"
+  if [ "$STATUS" = "new_consultation" ]; then break; fi
+  sleep 1
+done
+sleep 2
+echo "Capturing screenshot_new_consultation_android.png..."
+adb exec-out screencap -p > screenshot_new_consultation_android.png
 
 ls -lh screenshot_*android.png
 echo "=== Android Screenshot Capture Complete ==="

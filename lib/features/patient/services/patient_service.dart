@@ -11,13 +11,26 @@ class PatientService {
 
   SupabaseClient get _client => _customClient ?? supabaseClient;
 
-  /// Fetches all patients belonging to the authenticated doctor's clinic.
-  Future<List<PatientModel>> fetchPatients() async {
+  /// Fetches patients belonging to the authenticated doctor's clinic,
+  /// with optional server-side search and pagination.
+  Future<List<PatientModel>> fetchPatients({
+    int limit = 20,
+    int offset = 0,
+    String? searchQuery,
+  }) async {
     try {
-      final data = await _client
-          .from('patients')
-          .select()
-          .order('created_at', ascending: false);
+      var query = _client.from('patients').select();
+
+      if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+        final term = searchQuery.trim();
+        query = query.or(
+          'full_name.ilike.%$term%,opd_number.ilike.%$term%,contact_info.ilike.%$term%',
+        );
+      }
+
+      final data = await query
+          .order('created_at', ascending: false)
+          .range(offset, offset + limit - 1);
 
       return (data as List<dynamic>)
           .map((row) => PatientModel.fromJson(row as Map<String, dynamic>))
