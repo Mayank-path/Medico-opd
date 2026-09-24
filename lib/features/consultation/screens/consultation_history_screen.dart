@@ -2,10 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/test/ci_flow_coordinator.dart';
+import '../../../core/utils/uuid_generator.dart';
 
+import '../../consent/models/consent_model.dart';
+import '../../consent/screens/consent_capture_screen.dart';
+import '../../recording/screens/recording_screen.dart';
 import '../../patient/models/patient_model.dart';
 import '../models/consultation_model.dart';
 import '../services/consultation_service.dart';
+import 'new_consultation_screen.dart';
 
 class ConsultationHistoryScreen extends StatefulWidget {
   final PatientModel patient;
@@ -62,7 +67,11 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
             )) {
           CiFlowCoordinator.registerScreen(
             screenName: 'consultation',
-            onAdvance: null,
+            onAdvance: () {
+              if (mounted) {
+                _startNewConsultation();
+              }
+            },
           );
         }
       }
@@ -77,34 +86,47 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
   }
 
   Future<void> _startNewConsultation() async {
-    try {
-      final newConsultation = await _consultationService.createConsultation(
-        patientId: widget.patient.id,
-        doctorId: widget.doctorId,
-        clinicId: widget.clinicId,
-        status: 'in_progress',
-      );
+    final newConsultation = await Navigator.of(context).push<ConsultationModel>(
+      MaterialPageRoute(
+        builder: (_) => NewConsultationScreen(
+          patient: widget.patient,
+          clinicId: widget.clinicId,
+          doctorId: widget.doctorId,
+          consultationService: _consultationService,
+        ),
+      ),
+    );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Consultation started'),
-            backgroundColor: Color(0xFF007A78),
+    if (newConsultation != null && mounted) {
+      setState(() {
+        _consultations.insert(0, newConsultation);
+      });
+    }
+  }
+
+  Future<void> _openRecordingFlow(ConsultationModel consultation) async {
+    final consent = await Navigator.of(context).push<ConsentModel>(
+      MaterialPageRoute(
+        builder: (_) => ConsentCaptureScreen(
+          patient: widget.patient,
+          consultation: consultation,
+          doctorId: widget.doctorId,
+        ),
+      ),
+    );
+
+    if (consent != null && consent.isGrantedAndActive && mounted) {
+      final recordingId = generateUuidV4();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RecordingScreen(
+            patient: widget.patient,
+            consultation: consultation,
+            doctorId: widget.doctorId,
+            clientRecordingId: recordingId,
           ),
-        );
-        setState(() {
-          _consultations.insert(0, newConsultation);
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to start consultation: $e'),
-            backgroundColor: Colors.red.shade800,
-          ),
-        );
-      }
+        ),
+      );
     }
   }
 
@@ -386,30 +408,52 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
                                 ],
                                 const SizedBox(height: 12),
                                 if (consultation.status != 'completed')
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton.icon(
-                                      key: Key(
-                                        'advance_status_${consultation.id}',
-                                      ),
-                                      onPressed: () =>
-                                          _advanceStatus(consultation),
-                                      icon: Icon(
-                                        consultation.status == 'draft'
-                                            ? Icons.play_arrow
-                                            : Icons.check,
-                                        size: 16,
-                                      ),
-                                      label: Text(
-                                        consultation.status == 'draft'
-                                            ? 'Mark In Progress'
-                                            : 'Mark Completed',
-                                        style: TextStyle(
-                                          color: brandTeal,
-                                          fontWeight: FontWeight.bold,
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      TextButton.icon(
+                                        key: Key(
+                                          'record_audio_${consultation.id}',
+                                        ),
+                                        onPressed: () =>
+                                            _openRecordingFlow(consultation),
+                                        icon: const Icon(
+                                          Icons.mic,
+                                          size: 16,
+                                          color: Colors.deepOrange,
+                                        ),
+                                        label: const Text(
+                                          'Record Audio',
+                                          style: TextStyle(
+                                            color: Colors.deepOrange,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      TextButton.icon(
+                                        key: Key(
+                                          'advance_status_${consultation.id}',
+                                        ),
+                                        onPressed: () =>
+                                            _advanceStatus(consultation),
+                                        icon: Icon(
+                                          consultation.status == 'draft'
+                                              ? Icons.play_arrow
+                                              : Icons.check,
+                                          size: 16,
+                                        ),
+                                        label: Text(
+                                          consultation.status == 'draft'
+                                              ? 'Begin Consultation'
+                                              : 'Mark Completed',
+                                          style: TextStyle(
+                                            color: brandTeal,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                               ],
                             ),
