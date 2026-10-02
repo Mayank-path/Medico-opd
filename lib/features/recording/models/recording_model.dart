@@ -12,7 +12,14 @@ enum RecordingScreenState {
 
 enum RecordingUploadStatus { pending, uploading, uploaded, failed }
 
-enum RecordingProcessingStatus { pending, transcribing, transcribed, failed }
+enum RecordingProcessingStatus {
+  pending,
+  queued,
+  transcribing,
+  structuring,
+  transcribed,
+  failed,
+}
 
 enum RecordingDeletionStatus { active, pendingDeletion, deleted, held }
 
@@ -32,6 +39,21 @@ class RecordingModel {
   final bool legalHold;
   final RecordingDeletionStatus deletionStatus;
 
+  // Block 1D Durable Job Fields
+  final DateTime? processingStartedAt;
+  final DateTime? lastAttemptAt;
+  final int attemptCount;
+  final int maxAttempts;
+  final String? lastErrorCode;
+  final String? lastErrorMessage;
+  final String? leaseWorkerId;
+  final DateTime? leaseExpiresAt;
+
+  // Block 1G Storage Retention & Lifecycle Fields
+  final DateTime? deletedAt;
+  final DateTime? deletionAttemptedAt;
+  final String? deletionErrorCode;
+
   const RecordingModel({
     required this.id,
     required this.consultationId,
@@ -47,6 +69,17 @@ class RecordingModel {
     this.retentionExpiresAt,
     this.legalHold = false,
     this.deletionStatus = RecordingDeletionStatus.active,
+    this.processingStartedAt,
+    this.lastAttemptAt,
+    this.attemptCount = 0,
+    this.maxAttempts = 3,
+    this.lastErrorCode,
+    this.lastErrorMessage,
+    this.leaseWorkerId,
+    this.leaseExpiresAt,
+    this.deletedAt,
+    this.deletionAttemptedAt,
+    this.deletionErrorCode,
   });
 
   factory RecordingModel.fromJson(Map<String, dynamic> json) {
@@ -71,6 +104,27 @@ class RecordingModel {
       deletionStatus: _parseDeletionStatus(
         json['deletion_status'] as String?,
       ),
+      processingStartedAt: json['processing_started_at'] != null
+          ? DateTime.parse(json['processing_started_at'] as String)
+          : null,
+      lastAttemptAt: json['last_attempt_at'] != null
+          ? DateTime.parse(json['last_attempt_at'] as String)
+          : null,
+      attemptCount: json['attempt_count'] as int? ?? 0,
+      maxAttempts: json['max_attempts'] as int? ?? 3,
+      lastErrorCode: json['last_error_code'] as String?,
+      lastErrorMessage: json['last_error_message'] as String?,
+      leaseWorkerId: json['lease_worker_id'] as String?,
+      leaseExpiresAt: json['lease_expires_at'] != null
+          ? DateTime.parse(json['lease_expires_at'] as String)
+          : null,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
+      deletionAttemptedAt: json['deletion_attempted_at'] != null
+          ? DateTime.parse(json['deletion_attempted_at'] as String)
+          : null,
+      deletionErrorCode: json['deletion_error_code'] as String?,
     );
   }
 
@@ -90,6 +144,17 @@ class RecordingModel {
       'retention_expires_at': retentionExpiresAt?.toIso8601String(),
       'legal_hold': legalHold,
       'deletion_status': deletionStatus.name,
+      'processing_started_at': processingStartedAt?.toIso8601String(),
+      'last_attempt_at': lastAttemptAt?.toIso8601String(),
+      'attempt_count': attemptCount,
+      'max_attempts': maxAttempts,
+      'last_error_code': lastErrorCode,
+      'last_error_message': lastErrorMessage,
+      'lease_worker_id': leaseWorkerId,
+      'lease_expires_at': leaseExpiresAt?.toIso8601String(),
+      'deleted_at': deletedAt?.toIso8601String(),
+      'deletion_attempted_at': deletionAttemptedAt?.toIso8601String(),
+      'deletion_error_code': deletionErrorCode,
     };
   }
 
@@ -109,8 +174,12 @@ class RecordingModel {
 
   static RecordingProcessingStatus _parseProcessingStatus(String? val) {
     switch (val) {
+      case 'queued':
+        return RecordingProcessingStatus.queued;
       case 'transcribing':
         return RecordingProcessingStatus.transcribing;
+      case 'structuring':
+        return RecordingProcessingStatus.structuring;
       case 'transcribed':
         return RecordingProcessingStatus.transcribed;
       case 'failed':

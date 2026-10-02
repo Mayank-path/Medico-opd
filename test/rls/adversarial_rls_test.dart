@@ -647,6 +647,78 @@ void main() {
         );
       });
 
+      test('ADVERSARIAL 11B (Block 1C): Keyset pagination and search strictly enforce clinic isolation under multi-tenancy', () async {
+        // Create 2 patients in Clinic A
+        final patA1 = await clientA.from('patients').insert({
+          'clinic_id': clinicAId,
+          'full_name': 'Block1C Patient Alpha One $timestamp',
+          'dob_or_age': '25 yrs',
+          'sex': 'Male',
+          'opd_number': 'OPD-A-B1C-1',
+          'created_by': doctorAId,
+        }).select().single();
+        createdPatientIds.add(patA1['id'] as String);
+
+        final patA2 = await clientA.from('patients').insert({
+          'clinic_id': clinicAId,
+          'full_name': 'Block1C Patient Alpha Two $timestamp',
+          'dob_or_age': '28 yrs',
+          'sex': 'Female',
+          'opd_number': 'OPD-A-B1C-2',
+          'created_by': doctorAId,
+        }).select().single();
+        createdPatientIds.add(patA2['id'] as String);
+
+        // Create 1 patient in Clinic B with matching search term substring
+        final patB1 = await clientB.from('patients').insert({
+          'clinic_id': clinicBId,
+          'full_name': 'Block1C Patient Alpha Impostor $timestamp',
+          'dob_or_age': '35 yrs',
+          'sex': 'Male',
+          'opd_number': 'OPD-B-B1C-1',
+          'created_by': doctorBId,
+        }).select().single();
+        createdPatientIds.add(patB1['id'] as String);
+
+        // 1. Doctor B queries with search term matching Clinic A patients ("Block1C Patient Alpha")
+        final searchByB = await clientB
+            .from('patients')
+            .select('id, clinic_id, full_name, opd_number')
+            .or('full_name.ilike.%Block1C Patient Alpha%')
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(10);
+
+        expect(
+          searchByB.any((p) => p['clinic_id'] == clinicAId),
+          isFalse,
+          reason: 'Doctor B search must NEVER return any patients from Clinic A',
+        );
+        expect(
+          searchByB.every((p) => p['clinic_id'] == clinicBId),
+          isTrue,
+          reason: 'Doctor B queries must only ever return Clinic B patients',
+        );
+
+        // 2. Doctor B attempts to paginate using Doctor A patient as keyset cursor
+        final patA1CreatedAt = patA1['created_at'] as String;
+        final patA1Id = patA1['id'] as String;
+
+        final doctorBWithDoctorACursor = await clientB
+            .from('patients')
+            .select('id, clinic_id, full_name')
+            .or('created_at.lt.$patA1CreatedAt,and(created_at.eq.$patA1CreatedAt,id.lt.$patA1Id)')
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(10);
+
+        expect(
+          doctorBWithDoctorACursor.any((p) => p['clinic_id'] == clinicAId),
+          isFalse,
+          reason: 'Keyset cursor based on another clinic record must NEVER leak foreign clinic records',
+        );
+      });
+
       test('ADVERSARIAL 12: Column Grant Protection - Updating clinic_id or created_by on patients is denied', () async {
         final patAResp = await clientA
             .from('patients')
@@ -746,6 +818,51 @@ void main() {
           updateB,
           isEmpty,
           reason: 'RLS must block Doctor B from updating Clinic A consultation',
+        );
+      });
+
+      test('ADVERSARIAL 13B (Block 1C): Consultation history keyset pagination strictly isolates clinics', () async {
+        // Doctor B attempts to paginate consultations using Doctor A's consultation as keyset cursor
+        // Condition: created_at.lt.<tA>,and(created_at.eq.<tA>,id.lt.<idA>)
+        final patAResp = await clientA
+            .from('patients')
+            .insert({
+              'clinic_id': clinicAId,
+              'full_name': 'Patient Cons 13B $timestamp',
+              'created_by': doctorAId,
+            })
+            .select()
+            .single();
+        final patAId = patAResp['id'] as String;
+        createdPatientIds.add(patAId);
+
+        final consAResp = await clientA
+            .from('consultations')
+            .insert({
+              'patient_id': patAId,
+              'doctor_id': doctorAId,
+              'clinic_id': clinicAId,
+              'status': 'draft',
+            })
+            .select()
+            .single();
+        final consAId = consAResp['id'] as String;
+        final consACreatedAt = consAResp['created_at'] as String;
+        createdConsultationIds.add(consAId);
+
+        // Doctor B queries consultations with keyset condition matching Doctor A consultation
+        final doctorBHistory = await clientB
+            .from('consultations')
+            .select('id, clinic_id, status')
+            .or('created_at.lt.$consACreatedAt,and(created_at.eq.$consACreatedAt,id.lt.$consAId)')
+            .order('created_at', ascending: false)
+            .order('id', ascending: false)
+            .limit(10);
+
+        expect(
+          doctorBHistory.any((c) => c['clinic_id'] == clinicAId),
+          isFalse,
+          reason: 'Doctor B keyset query must NEVER retrieve Clinic A consultations',
         );
       });
 

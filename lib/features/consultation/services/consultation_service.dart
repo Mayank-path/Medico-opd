@@ -1,33 +1,105 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/observability/observability.dart';
+import '../../../core/pagination/keyset_cursor.dart';
+import '../../../core/pagination/paginated_result.dart';
 import '../../../core/supabase/supabase_client_provider.dart';
 import '../models/consultation_model.dart';
 
 class ConsultationService {
   final SupabaseClient? _customClient;
+  final TelemetryService _telemetry;
+  final StructuredLogger _logger;
 
-  ConsultationService({SupabaseClient? client}) : _customClient = client;
+  ConsultationService({
+    SupabaseClient? client,
+    TelemetryService? telemetry,
+  })  : _customClient = client,
+        _telemetry = telemetry ?? Telemetry.instance,
+        _logger = StructuredLogger('consultation_service');
 
   SupabaseClient get _client => _customClient ?? supabaseClient;
 
-  /// Fetches consultations for a given patient, ordered from newest to oldest.
-  Future<List<ConsultationModel>> fetchConsultationsForPatient(
-    String patientId,
-  ) async {
+  /// Fetches consultations for a given patient using keyset pagination,
+  /// minimal column projection, and optional date-range bounding.
+  /// Limits are clamped between 1 and 100 (default 20).
+  Future<PaginatedResult<ConsultationModel>> fetchConsultationsForPatient({
+    required String patientId,
+    int limit = 20,
+    String? cursor,
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async {
+    final sw = Stopwatch()..start();
     try {
-      final data = await _client
-          .from('consultations')
-          .select()
-          .eq('patient_id', patientId)
-          .order('created_at', ascending: false);
+      final safeLimit = limit.clamp(1, 100);
 
-      return (data as List<dynamic>)
+      // PART E: Explicit column projection to eliminate SELECT *
+      var query = _client.from('consultations').select(
+        'id, patient_id, doctor_id, clinic_id, status, started_at, ended_at, created_at',
+      ).eq('patient_id', patientId);
+
+      // PART D: Optional date-range bounding
+      if (fromDate != null) {
+        query = query.gte('created_at', fromDate.toUtc().toIso8601String());
+      }
+      if (toDate != null) {
+        query = query.lte('created_at', toDate.toUtc().toIso8601String());
+      }
+
+      // PART C: Keyset pagination filter using deterministic (created_at DESC, id DESC)
+      if (cursor != null && cursor.trim().isNotEmpty) {
+        final c = KeysetCursor.decode(cursor);
+        query = query.or(
+          'created_at.lt.${c.createdAtIso},and(created_at.eq.${c.createdAtIso},id.lt.${c.id})',
+        );
+      }
+
+      // PART C: Deterministic ordering with tie-breaker
+      final data = await query
+          .order('created_at', ascending: false)
+          .order('id', ascending: false)
+          .limit(safeLimit + 1);
+
+      final rawList = (data as List<dynamic>)
           .map((row) => ConsultationModel.fromJson(row as Map<String, dynamic>))
           .toList();
-    } catch (e) {
-      debugPrint(
-        '[ConsultationService] Failed to fetch consultations for patient $patientId: $e',
+
+      final hasMore = rawList.length > safeLimit;
+      final items = hasMore ? rawList.sublist(0, safeLimit) : rawList;
+
+      String? nextCursor;
+      if (hasMore && items.isNotEmpty) {
+        final last = items.last;
+        nextCursor = KeysetCursor(createdAt: last.createdAt, id: last.id).encode();
+      }
+
+      final durationMs = sw.elapsedMilliseconds;
+      _telemetry.timing(MetricDefinitions.consultationQueryLatencyMs, durationMs);
+      _logger.info(
+        'CONSULTATIONS_FETCHED',
+        operation: 'fetch_consultations',
+        durationMs: durationMs,
+        metadata: {'returned_count': items.length, 'has_more': hasMore},
+      );
+
+      return PaginatedResult<ConsultationModel>(
+        items: items,
+        nextCursor: nextCursor,
+        hasMore: hasMore,
+      );
+    } catch (e, stackTrace) {
+      sw.stop();
+      _telemetry.recordError(
+        e,
+        stackTrace: stackTrace,
+        errorCode: AppErrorCode.databaseError.code,
+      );
+      _logger.error(
+        'FETCH_CONSULTATIONS_FAILED',
+        operation: 'fetch_consultations',
+        errorCode: AppErrorCode.databaseError.code,
+        durationMs: sw.elapsedMilliseconds,
       );
       rethrow;
     }
@@ -56,8 +128,13 @@ class ConsultationService {
           .single();
 
       return ConsultationModel.fromJson(data);
-    } catch (e) {
-      debugPrint('[ConsultationService] Failed to create consultation: $e');
+    } catch (e, stackTrace) {
+      _telemetry.recordError(
+        e,
+        stackTrace: stackTrace,
+        errorCode: AppErrorCode.databaseError.code,
+      );
+      _logger.error('CREATE_CONSULTATION_FAILED', operation: 'create_consultation', errorCode: AppErrorCode.databaseError.code);
       rethrow;
     }
   }
@@ -82,8 +159,13 @@ class ConsultationService {
           .single();
 
       return ConsultationModel.fromJson(data);
-    } catch (e) {
-      debugPrint('[ConsultationService] Failed to update consultation: $e');
+    } catch (e, stackTrace) {
+      _telemetry.recordError(
+        e,
+        stackTrace: stackTrace,
+        errorCode: AppErrorCode.databaseError.code,
+      );
+      _logger.error('UPDATE_CONSULTATION_FAILED', operation: 'update_consultation', errorCode: AppErrorCode.databaseError.code);
       rethrow;
     }
   }

@@ -7,6 +7,7 @@ import '../../../core/utils/uuid_generator.dart';
 import '../../consent/models/consent_model.dart';
 import '../../consent/screens/consent_capture_screen.dart';
 import '../../recording/screens/recording_screen.dart';
+import '../../ai_draft/screens/ai_draft_review_screen.dart';
 import '../../patient/models/patient_model.dart';
 import '../models/consultation_model.dart';
 import '../services/consultation_service.dart';
@@ -33,7 +34,11 @@ class ConsultationHistoryScreen extends StatefulWidget {
 
 class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
   late final ConsultationService _consultationService;
+  static const int _pageSize = 20;
+  String? _nextCursor;
+  bool _hasMore = false;
   bool _isLoading = true;
+  bool _isLoadingMore = false;
   String? _errorMessage;
   List<ConsultationModel> _consultations = [];
 
@@ -41,23 +46,36 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
   void initState() {
     super.initState();
     _consultationService = widget.consultationService ?? ConsultationService();
-    _loadConsultations();
+    _loadConsultations(refresh: true);
   }
 
-  Future<void> _loadConsultations() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+  Future<void> _loadConsultations({bool refresh = false}) async {
+    if (refresh) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+        _nextCursor = null;
+        _hasMore = false;
+      });
+    }
 
     try {
-      final list = await _consultationService.fetchConsultationsForPatient(
-        widget.patient.id,
+      final result = await _consultationService.fetchConsultationsForPatient(
+        patientId: widget.patient.id,
+        limit: _pageSize,
+        cursor: refresh ? null : _nextCursor,
       );
       if (mounted) {
         setState(() {
-          _consultations = list;
+          if (refresh) {
+            _consultations = result.items;
+          } else {
+            _consultations.addAll(result.items);
+          }
+          _nextCursor = result.nextCursor;
+          _hasMore = result.hasMore;
           _isLoading = false;
+          _isLoadingMore = false;
         });
 
         if (kDebugMode &&
@@ -79,10 +97,21 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLoadingMore = false;
           _errorMessage = 'Failed to load consultations: $e';
         });
       }
     }
+  }
+
+  Future<void> _loadMoreConsultations() async {
+    if (_isLoadingMore || !_hasMore || _isLoading || _nextCursor == null) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    await _loadConsultations(refresh: false);
   }
 
   Future<void> _startNewConsultation() async {
@@ -326,13 +355,29 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
                     ),
                   )
                 : RefreshIndicator(
-                    onRefresh: _loadConsultations,
+                    onRefresh: () => _loadConsultations(refresh: true),
                     child: ListView.separated(
                       padding: const EdgeInsets.all(16),
-                      itemCount: _consultations.length,
+                      itemCount: _consultations.length + (_hasMore ? 1 : 0),
                       separatorBuilder: (context, index) =>
                           const SizedBox(height: 12),
                       itemBuilder: (context, index) {
+                        if (index == _consultations.length) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Center(
+                              child: _isLoadingMore
+                                  ? const CircularProgressIndicator()
+                                  : OutlinedButton.icon(
+                                      key: const Key('load_more_consultations_button'),
+                                      onPressed: _loadMoreConsultations,
+                                      icon: const Icon(Icons.expand_more),
+                                      label: const Text('Load More Consultations'),
+                                    ),
+                            ),
+                          );
+                        }
+
                         final consultation = _consultations[index];
                         final statusColor = _getStatusColor(
                           consultation.status,
@@ -407,10 +452,35 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
                                   ),
                                 ],
                                 const SizedBox(height: 12),
-                                if (consultation.status != 'completed')
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton.icon(
+                                      key: Key('view_draft_${consultation.id}'),
+                                      onPressed: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => AiDraftReviewScreen(
+                                              patient: widget.patient,
+                                              consultation: consultation,
+                                              doctorId: widget.doctorId,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.description_outlined,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'Clinical Notes',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    if (consultation.status != 'completed') ...[
+                                      const SizedBox(width: 8),
                                       TextButton.icon(
                                         key: Key(
                                           'record_audio_${consultation.id}',
@@ -454,7 +524,8 @@ class _ConsultationHistoryScreenState extends State<ConsultationHistoryScreen> {
                                         ),
                                       ),
                                     ],
-                                  ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),

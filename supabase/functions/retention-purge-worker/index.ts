@@ -1,13 +1,34 @@
-// Scheduled Retention & Purge Worker (Supabase Edge Function)
-// Invariants 12 & 13: Data Minimization vs Statutory Retention
-// NOTE: Remains practically inert until data_retention_policies.retention_days is explicitly configured.
+// Block 1G: Scheduled Retention & Purge Worker (Supabase Edge Function)
+// Enforces DPDP Act data minimization vs statutory retention rules.
+// Provides bounded batch processing, dry-run mode, atomic DB claim,
+// 404 reconciliation, and explicit Production safety guards.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
+const PRODUCTION_PROJECT_ID = 'dyfrknwejqwilstcoytt';
+const BUCKET_NAME = 'consultation-recordings';
+
 Deno.serve(async (req) => {
+  const startTime = Date.now();
+
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const serviceRoleKey = Deno.env.get('SUPABASE_TEST_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+    const serviceRoleKey =
+      Deno.env.get('SUPABASE_TEST_SERVICE_ROLE_KEY') ||
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
+      '';
+
+    // 1. Production Safety Guard (Parts 1, 2 & 27)
+    if (supabaseUrl.toLowerCase().includes(PRODUCTION_PROJECT_ID)) {
+      console.error(`[PurgeWorker] CRITICAL: Production target (${PRODUCTION_PROJECT_ID}) detected. Aborting execution.`);
+      return new Response(
+        JSON.stringify({
+          error: 'CRITICAL: Execution is strictly forbidden in Production.',
+          project: PRODUCTION_PROJECT_ID,
+        }),
+        { status: 403, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!supabaseUrl || !serviceRoleKey) {
       return new Response(
@@ -16,111 +37,198 @@ Deno.serve(async (req) => {
       );
     }
 
+    const url = new URL(req.url);
+    const isDryRun = url.searchParams.get('dry_run') === 'true' || url.searchParams.get('dryRun') === 'true';
+    const limitParam = parseInt(url.searchParams.get('limit') || '50', 10);
+    const batchSize = isNaN(limitParam) ? 50 : Math.min(Math.max(limitParam, 1), 200);
+    const clinicId = url.searchParams.get('clinic_id') || undefined;
+
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
     });
 
     const nowIso = new Date().toISOString();
 
-    // 1. Fetch active data retention policies
-    const { data: policies, error: policyErr } = await supabase
-      .from('data_retention_policies')
-      .select('*');
+    // 2. Resolve active retention policy via authoritative RPC
+    const { data: policyRows, error: policyErr } = await supabase.rpc(
+      'resolve_retention_policy',
+      {
+        p_clinic_id: clinicId ?? null,
+        p_data_class: 'raw_audio',
+      }
+    );
 
     if (policyErr) {
-      throw new Error(`Failed to fetch retention policies: ${policyErr.message}`);
+      throw new Error(`Failed to resolve retention policy: ${policyErr.message}`);
     }
 
-    // Check if raw_audio retention is configured
-    const rawAudioPolicy = policies?.find((p) => p.data_class === 'raw_audio');
-    const isAudioRetentionConfigured = rawAudioPolicy?.retention_days !== null && rawAudioPolicy?.retention_days !== undefined;
+    const policy = policyRows && policyRows.length > 0 ? policyRows[0] : null;
+    const isConfigured = policy && policy.retention_days !== null && policy.is_enabled === true;
 
-    // If retention_days is NULL across the board, worker logs and remains inert
-    if (!isAudioRetentionConfigured) {
-      console.log('[PurgeWorker] data_retention_policies.retention_days is NULL. Worker is safely inert; no records purged.');
+    if (!isConfigured) {
+      console.log('[PurgeWorker] Retention policy is inert (retention_days is NULL or disabled). 0 records purged.');
+      return new Response(
+        JSON.stringify({
+          status: 'inert',
+          reason: 'retention_days_null_or_disabled',
+          scope: policy?.scope ?? 'unresolved',
+          dry_run: isDryRun,
+          eligible_count: 0,
+          deleted_count: 0,
+          blocked_count: 0,
+          already_missing_count: 0,
+          error_count: 0,
+          duration_ms: Date.now() - startTime,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    // 2. Query expired artifacts: deletion_status='active', legal_hold=false, retention_expires_at IS NOT NULL AND retention_expires_at < now()
-    const { data: expiredRecordings, error: recErr } = await supabase
+    // 3. Query expired candidate recordings (bounded batch)
+    let query = supabase
       .from('recordings')
-      .select('id, storage_path, consultation_id, legal_hold')
+      .select('id, storage_path, consultation_id, patient_id, doctor_id, legal_hold, processing_status, retention_expires_at')
       .eq('deletion_status', 'active')
+      .eq('legal_hold', false)
       .not('retention_expires_at', 'is', null)
-      .lt('retention_expires_at', nowIso);
+      .lte('retention_expires_at', nowIso)
+      .order('retention_expires_at', { ascending: true })
+      .limit(batchSize);
 
+    const { data: expiredRecordings, error: recErr } = await query;
     if (recErr) {
       throw new Error(`Failed to query expired recordings: ${recErr.message}`);
     }
 
-    let purgedCount = 0;
-    let skippedLegalHoldCount = 0;
+    let eligibleCount = 0;
+    let blockedCount = 0;
+    let alreadyMissingCount = 0;
+    let deletedCount = 0;
+    let errorCount = 0;
+    const items: Array<{ id: string; status: string; reason?: string }> = [];
+
+    const activeProcessingStatuses = new Set(['pending', 'queued', 'transcribing', 'structuring']);
 
     for (const item of expiredRecordings ?? []) {
-      // Step 7: Legal hold placed before scheduled deletion must be respected
+      // Rule checks: legal hold or active processing
       if (item.legal_hold === true) {
-        skippedLegalHoldCount++;
-        // Log skip to audit_logs
-        await supabase.from('audit_logs').insert({
-          event_type: 'PURGE_SKIPPED_LEGAL_HOLD',
-          target_table: 'recordings',
-          target_id: item.id,
-          metadata: {
-            reason: 'Item has legal_hold set to true; automated purge skipped.',
-            storage_path: item.storage_path,
-          },
-        });
+        blockedCount++;
+        items.push({ id: item.id, status: 'blocked', reason: 'legal_hold' });
         continue;
       }
 
-      // Mark deletion_status = 'pending_deletion'
-      await supabase
-        .from('recordings')
-        .update({ deletion_status: 'pending_deletion' })
-        .eq('id', item.id);
-
-      // Log purge event to audit_logs
-      await supabase.from('audit_logs').insert({
-        event_type: 'RECORDING_PURGED_RETENTION',
-        target_table: 'recordings',
-        target_id: item.id,
-        metadata: {
-          storage_path: item.storage_path,
-          consultation_id: item.consultation_id,
-          purged_at: nowIso,
-        },
-      });
-
-      // Execute storage deletion if file path is valid
-      if (item.storage_path) {
-        await supabase.storage
-          .from('consultation-recordings')
-          .remove([item.storage_path]);
+      if (activeProcessingStatuses.has(item.processing_status?.toLowerCase())) {
+        blockedCount++;
+        items.push({ id: item.id, status: 'blocked', reason: 'active_processing' });
+        continue;
       }
 
-      // Update recording row to 'deleted'
-      await supabase
-        .from('recordings')
-        .update({ deletion_status: 'deleted' })
-        .eq('id', item.id);
+      eligibleCount++;
 
-      purgedCount++;
+      if (isDryRun) {
+        items.push({ id: item.id, status: 'dry_run_eligible' });
+        continue;
+      }
+
+      // LIVE DELETION PIPELINE (Atomic claim -> Storage delete -> Finalize)
+      try {
+        // Step A: Atomic DB claim (prevents race with worker starting processing)
+        const { data: claimData, error: claimErr } = await supabase.rpc(
+          'claim_recording_for_retention_deletion',
+          {
+            p_recording_id: item.id,
+            p_worker_id: 'edge_retention_purge_worker',
+          }
+        );
+
+        if (claimErr || !claimData || claimData.length === 0) {
+          blockedCount++;
+          items.push({ id: item.id, status: 'claim_failed_concurrent_race' });
+          continue;
+        }
+
+        // Step B: Storage object removal
+        const { error: storageErr } = await supabase.storage
+          .from(BUCKET_NAME)
+          .remove([item.storage_path]);
+
+        if (storageErr) {
+          // Check if object was already missing (Database orphan reconciliation)
+          if (storageErr.message?.includes('not found') || (storageErr as any).statusCode === '404') {
+            await supabase.rpc('reconcile_missing_recording_storage', { p_recording_id: item.id });
+            await supabase.from('audit_logs').insert({
+              event_type: 'MISSING_OBJECT_RECONCILIATION',
+              target_table: 'recordings',
+              target_id: item.id,
+              metadata: {
+                storage_path: item.storage_path,
+                reason: 'storage_object_404',
+              },
+            });
+            alreadyMissingCount++;
+            items.push({ id: item.id, status: 'reconciled_missing' });
+            continue;
+          } else {
+            // Revert claim on unexpected storage failure
+            await supabase.rpc('revert_recording_deletion', {
+              p_recording_id: item.id,
+              p_error_code: 'STORAGE_DELETE_FAILED',
+            });
+            errorCount++;
+            items.push({ id: item.id, status: 'storage_delete_failed', reason: storageErr.message });
+            continue;
+          }
+        }
+
+        // Step C: Finalize DB recording deletion
+        await supabase.rpc('finalize_recording_deletion', { p_recording_id: item.id });
+
+        // Step D: Write immutable audit record
+        await supabase.from('audit_logs').insert({
+          event_type: 'RETENTION_DELETE',
+          target_table: 'recordings',
+          target_id: item.id,
+          metadata: {
+            reason: 'retention_window_expired',
+            storage_path: item.storage_path,
+            purged_at: nowIso,
+          },
+        });
+
+        deletedCount++;
+        items.push({ id: item.id, status: 'deleted' });
+      } catch (opErr: any) {
+        errorCount++;
+        items.push({ id: item.id, status: 'error', reason: opErr.message });
+      }
     }
+
+    const durationMs = Date.now() - startTime;
 
     return new Response(
       JSON.stringify({
         status: 'success',
-        raw_audio_policy_configured: isAudioRetentionConfigured,
-        retention_days: rawAudioPolicy?.retention_days ?? null,
-        expired_candidates_found: expiredRecordings?.length ?? 0,
-        purged_count: purgedCount,
-        skipped_legal_hold_count: skippedLegalHoldCount,
-        timestamp: nowIso,
+        dry_run: isDryRun,
+        batch_size: batchSize,
+        policy_scope: policy.scope,
+        retention_days: policy.retention_days,
+        eligible_count: eligibleCount,
+        orphan_count: 0,
+        blocked_count: blockedCount,
+        already_missing_count: alreadyMissingCount,
+        deleted_count: deletedCount,
+        error_count: errorCount,
+        duration_ms: durationMs,
+        items,
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: err.message ?? 'Unknown worker error' }),
+      JSON.stringify({
+        error: err.message ?? 'Unknown worker error',
+        duration_ms: Date.now() - startTime,
+      }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

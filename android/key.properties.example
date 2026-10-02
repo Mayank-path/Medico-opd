@@ -1,0 +1,25 @@
+# Example Android Release Keystore Configuration for Medico-OPD
+#
+# INSTRUCTIONS:
+# 1. Generate or obtain your production upload keystore:
+#      keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# 2. Copy this file to 'android/key.properties' (which is git-ignored):
+#      cp android/key.properties.example android/key.properties
+#
+# 3. Fill in the values below.
+#
+# 4. Alternatively, in CI/CD environments, supply the credentials via environment variables:
+#      ANDROID_STORE_FILE=upload-keystore.jks
+#      ANDROID_STORE_PASSWORD=your_store_password
+#      ANDROID_KEY_ALIAS=your_key_alias
+#      ANDROID_KEY_PASSWORD=your_key_password
+#
+# SECURITY WARNING:
+# - NEVER commit 'key.properties' or '*.keystore' / '*.jks' files into version control.
+# - Store keystore files and passwords in a secure password manager or vault.
+
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+storeFile=upload-keystore.jks

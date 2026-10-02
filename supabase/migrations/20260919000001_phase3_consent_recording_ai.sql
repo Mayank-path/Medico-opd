@@ -61,6 +61,51 @@ CREATE INDEX IF NOT EXISTS idx_consents_consultation_id ON public.consultation_c
 CREATE INDEX IF NOT EXISTS idx_consents_clinic_id ON public.consultation_consents(clinic_id);
 CREATE INDEX IF NOT EXISTS idx_consents_patient_id ON public.consultation_consents(patient_id);
 
+-- Gating trigger: enforce consultation, patient, and clinic consistency
+CREATE OR REPLACE FUNCTION public.check_consent_clinic_consistency()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_cons_clinic_id UUID;
+    v_cons_patient_id UUID;
+    v_pat_clinic_id UUID;
+BEGIN
+    SELECT clinic_id, patient_id INTO v_cons_clinic_id, v_cons_patient_id
+    FROM public.consultations
+    WHERE id = NEW.consultation_id;
+
+    IF v_cons_clinic_id IS NULL OR v_cons_clinic_id <> NEW.clinic_id THEN
+        RAISE EXCEPTION 'Consent consultation does not belong to the consent clinic'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF v_cons_patient_id IS NULL OR v_cons_patient_id <> NEW.patient_id THEN
+        RAISE EXCEPTION 'Consent patient does not match the consultation patient'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT clinic_id INTO v_pat_clinic_id
+    FROM public.patients
+    WHERE id = NEW.patient_id;
+
+    IF v_pat_clinic_id IS NULL OR v_pat_clinic_id <> NEW.clinic_id THEN
+        RAISE EXCEPTION 'Consent patient does not belong to the consent clinic'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_consent_clinic_consistency ON public.consultation_consents;
+CREATE TRIGGER trg_check_consent_clinic_consistency
+    BEFORE INSERT OR UPDATE ON public.consultation_consents
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_consent_clinic_consistency();
+
 ALTER TABLE public.consultation_consents ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Doctors can view clinic consultation consents" ON public.consultation_consents;
@@ -76,6 +121,12 @@ CREATE POLICY "Doctors can insert clinic consultation consents"
     WITH CHECK (
         clinic_id = public.get_auth_clinic_id()
         AND recorded_by IN (SELECT id FROM public.doctors WHERE auth_user_id = auth.uid())
+        AND EXISTS (
+            SELECT 1 FROM public.consultations c
+            WHERE c.id = consultation_consents.consultation_id
+              AND c.clinic_id = consultation_consents.clinic_id
+              AND c.patient_id = consultation_consents.patient_id
+        )
     );
 
 DROP POLICY IF EXISTS "Doctors can update revoked_at for clinic consents" ON public.consultation_consents;
@@ -110,6 +161,76 @@ CREATE TABLE IF NOT EXISTS public.recordings (
 CREATE INDEX IF NOT EXISTS idx_recordings_consultation_id ON public.recordings(consultation_id);
 CREATE INDEX IF NOT EXISTS idx_recordings_patient_id ON public.recordings(patient_id);
 CREATE INDEX IF NOT EXISTS idx_recordings_doctor_id ON public.recordings(doctor_id);
+
+-- Gating trigger: enforce recording cross-entity clinic and patient consistency
+CREATE OR REPLACE FUNCTION public.check_recording_clinic_consistency()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_cons_clinic_id UUID;
+    v_cons_patient_id UUID;
+    v_doctor_clinic_id UUID;
+    v_patient_clinic_id UUID;
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.consultation_id <> OLD.consultation_id THEN
+            RAISE EXCEPTION 'consultation_id cannot be changed on a recording'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.patient_id <> OLD.patient_id THEN
+            RAISE EXCEPTION 'patient_id cannot be changed on a recording'
+                USING ERRCODE = 'check_violation';
+        END IF;
+        IF NEW.doctor_id <> OLD.doctor_id THEN
+            RAISE EXCEPTION 'doctor_id cannot be changed on a recording'
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
+    SELECT clinic_id, patient_id INTO v_cons_clinic_id, v_cons_patient_id
+    FROM public.consultations
+    WHERE id = NEW.consultation_id;
+
+    IF v_cons_clinic_id IS NULL THEN
+        RAISE EXCEPTION 'Recording consultation not found'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF v_cons_patient_id IS NULL OR v_cons_patient_id <> NEW.patient_id THEN
+        RAISE EXCEPTION 'Recording patient does not match the consultation patient'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT clinic_id INTO v_patient_clinic_id
+    FROM public.patients
+    WHERE id = NEW.patient_id;
+
+    IF v_patient_clinic_id IS NULL OR v_patient_clinic_id <> v_cons_clinic_id THEN
+        RAISE EXCEPTION 'Recording patient does not belong to the consultation clinic'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    SELECT clinic_id INTO v_doctor_clinic_id
+    FROM public.doctors
+    WHERE id = NEW.doctor_id;
+
+    IF v_doctor_clinic_id IS NULL OR v_doctor_clinic_id <> v_cons_clinic_id THEN
+        RAISE EXCEPTION 'Recording doctor does not belong to the consultation clinic'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_recording_clinic_consistency ON public.recordings;
+CREATE TRIGGER trg_check_recording_clinic_consistency
+    BEFORE INSERT OR UPDATE ON public.recordings
+    FOR EACH ROW
+    EXECUTE FUNCTION public.check_recording_clinic_consistency();
 
 -- Gating trigger: enforce granted, unrevoked consent before recording insertion
 CREATE OR REPLACE FUNCTION public.check_recording_consent()
@@ -164,8 +285,11 @@ CREATE POLICY "Doctors can insert clinic recordings"
     WITH CHECK (
         EXISTS (
             SELECT 1 FROM public.consultations c
-            WHERE c.id = consultation_id
+            JOIN public.doctors d ON d.id = recordings.doctor_id
+            WHERE c.id = recordings.consultation_id
+              AND c.patient_id = recordings.patient_id
               AND c.clinic_id = public.get_auth_clinic_id()
+              AND d.clinic_id = public.get_auth_clinic_id()
         )
     );
 
@@ -252,12 +376,23 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+    -- Invariant: Once an AI draft is finalized, it cannot be modified
     IF OLD.status = 'finalized' THEN
         RAISE EXCEPTION 'AI draft is finalized and permanently locked against modifications'
             USING ERRCODE = 'check_violation';
     END IF;
 
-    IF OLD.finalized_at IS NOT NULL AND (NEW.finalized_at <> OLD.finalized_at OR NEW.finalized_by <> OLD.finalized_by) THEN
+    -- Invariant: Finalizing a draft requires both finalized_by and finalized_at
+    IF NEW.status = 'finalized' AND (NEW.finalized_by IS NULL OR NEW.finalized_at IS NULL) THEN
+        RAISE EXCEPTION 'Finalized AI draft must have finalized_by and finalized_at specified'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- Invariant: finalized_by and finalized_at cannot be altered once initially set (NULL-safe comparison)
+    IF (OLD.finalized_at IS NOT NULL OR OLD.finalized_by IS NOT NULL) AND (
+        NEW.finalized_at IS DISTINCT FROM OLD.finalized_at
+        OR NEW.finalized_by IS DISTINCT FROM OLD.finalized_by
+    ) THEN
         RAISE EXCEPTION 'finalized_by and finalized_at can only be set once'
             USING ERRCODE = 'check_violation';
     END IF;
@@ -271,6 +406,28 @@ CREATE TRIGGER trg_lock_finalized_ai_draft
     BEFORE UPDATE ON public.ai_drafts
     FOR EACH ROW
     EXECUTE FUNCTION public.lock_finalized_ai_draft();
+
+-- Invariant: Finalized clinical drafts cannot be deleted
+CREATE OR REPLACE FUNCTION public.prevent_delete_finalized_ai_draft()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF OLD.status = 'finalized' THEN
+        RAISE EXCEPTION 'Finalized AI drafts are permanent medical records and cannot be deleted'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_delete_finalized_ai_draft ON public.ai_drafts;
+CREATE TRIGGER trg_prevent_delete_finalized_ai_draft
+    BEFORE DELETE ON public.ai_drafts
+    FOR EACH ROW
+    EXECUTE FUNCTION public.prevent_delete_finalized_ai_draft();
 
 ALTER TABLE public.ai_drafts ENABLE ROW LEVEL SECURITY;
 

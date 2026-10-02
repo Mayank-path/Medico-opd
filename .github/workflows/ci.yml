@@ -110,7 +110,6 @@ jobs:
           CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
           CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
           EOF
-          cat .env
 
       - name: Install dependencies
         run: flutter pub get
@@ -227,7 +226,6 @@ jobs:
           CI_TEST_DOCTOR_EMAIL=${CI_TEST_DOCTOR_EMAIL}
           CI_TEST_DOCTOR_PASSWORD=${CI_TEST_DOCTOR_PASSWORD}
           EOF
-          cat .env
 
       - name: Install dependencies
         run: flutter pub get

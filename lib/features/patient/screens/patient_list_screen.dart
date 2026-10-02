@@ -40,7 +40,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
   Timer? _debounceTimer;
 
   static const int _pageSize = 20;
-  int _currentOffset = 0;
+  String? _nextCursor;
   bool _hasMore = true;
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -75,29 +75,29 @@ class _PatientListScreenState extends State<PatientListScreen> {
       setState(() {
         _isLoading = true;
         _errorMessage = null;
-        _currentOffset = 0;
+        _nextCursor = null;
         _hasMore = true;
       });
     }
 
     try {
       final query = _searchController.text.trim();
-      final list = await _patientService.fetchPatients(
+      final result = await _patientService.fetchPatients(
         limit: _pageSize,
-        offset: refresh ? 0 : _currentOffset,
+        cursor: refresh ? null : _nextCursor,
         searchQuery: query.isNotEmpty ? query : null,
       );
 
       if (mounted) {
         setState(() {
           if (refresh) {
-            _patients = list;
+            _patients = result.items;
           } else {
-            _patients.addAll(list);
+            _patients.addAll(result.items);
           }
 
-          _currentOffset = _patients.length;
-          _hasMore = list.length >= _pageSize;
+          _nextCursor = result.nextCursor;
+          _hasMore = result.hasMore;
           _isLoading = false;
           _isLoadingMore = false;
         });
@@ -129,7 +129,7 @@ class _PatientListScreenState extends State<PatientListScreen> {
   }
 
   Future<void> _loadMorePatients() async {
-    if (_isLoadingMore || !_hasMore || _isLoading) return;
+    if (_isLoadingMore || !_hasMore || _isLoading || _nextCursor == null) return;
 
     setState(() {
       _isLoadingMore = true;
@@ -168,7 +168,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
     if (newPatient != null && mounted) {
       setState(() {
         _patients.insert(0, newPatient);
-        _currentOffset++;
       });
     }
   }

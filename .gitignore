@@ -52,6 +52,15 @@ app.*.map.json
 .env.*
 !.env.example
 
+# Android keystore and signing credentials
+key.properties
+**/key.properties
+!**/key.properties.example
+*.keystore
+**/*.keystore
+*.jks
+**/*.jks
+
 # Local artifacts cache
 /.artifacts/
 *.zip

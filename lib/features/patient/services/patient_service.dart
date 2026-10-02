@@ -1,42 +1,108 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/observability/observability.dart';
+import '../../../core/pagination/keyset_cursor.dart';
+import '../../../core/pagination/paginated_result.dart';
 import '../../../core/supabase/supabase_client_provider.dart';
 import '../models/patient_model.dart';
 
 class PatientService {
   final SupabaseClient? _customClient;
+  final TelemetryService _telemetry;
+  final StructuredLogger _logger;
 
-  PatientService({SupabaseClient? client}) : _customClient = client;
+  PatientService({
+    SupabaseClient? client,
+    TelemetryService? telemetry,
+  })  : _customClient = client,
+        _telemetry = telemetry ?? Telemetry.instance,
+        _logger = StructuredLogger('patient_service');
 
   SupabaseClient get _client => _customClient ?? supabaseClient;
 
   /// Fetches patients belonging to the authenticated doctor's clinic,
-  /// with optional server-side search and pagination.
-  Future<List<PatientModel>> fetchPatients({
+  /// with keyset/cursor pagination, explicit column projection, and optional search.
+  /// Limits are clamped between 1 and 100 (default 20).
+  Future<PaginatedResult<PatientModel>> fetchPatients({
     int limit = 20,
-    int offset = 0,
+    String? cursor,
     String? searchQuery,
   }) async {
+    final sw = Stopwatch()..start();
+    final isSearch = searchQuery != null && searchQuery.trim().isNotEmpty;
     try {
-      var query = _client.from('patients').select();
+      final safeLimit = limit.clamp(1, 100);
 
-      if (searchQuery != null && searchQuery.trim().isNotEmpty) {
+      // PART E: Explicit column projection to eliminate SELECT *
+      var query = _client.from('patients').select(
+        'id, clinic_id, full_name, dob_or_age, sex, contact_info, opd_number, created_at, created_by',
+      );
+
+      // PART B: Search filtering compatible with GIN trigram indexes
+      if (isSearch) {
         final term = searchQuery.trim();
         query = query.or(
           'full_name.ilike.%$term%,opd_number.ilike.%$term%,contact_info.ilike.%$term%',
         );
       }
 
+      // PART B: Keyset pagination filter using deterministic (created_at DESC, id DESC)
+      if (cursor != null && cursor.trim().isNotEmpty) {
+        final c = KeysetCursor.decode(cursor);
+        query = query.or(
+          'created_at.lt.${c.createdAtIso},and(created_at.eq.${c.createdAtIso},id.lt.${c.id})',
+        );
+      }
+
+      // PART B: Deterministic ordering with id tie-breaker
       final data = await query
           .order('created_at', ascending: false)
-          .range(offset, offset + limit - 1);
+          .order('id', ascending: false)
+          .limit(safeLimit + 1);
 
-      return (data as List<dynamic>)
+      final rawList = (data as List<dynamic>)
           .map((row) => PatientModel.fromJson(row as Map<String, dynamic>))
           .toList();
-    } catch (e) {
-      debugPrint('[PatientService] Failed to fetch patients: $e');
+
+      final hasMore = rawList.length > safeLimit;
+      final items = hasMore ? rawList.sublist(0, safeLimit) : rawList;
+
+      String? nextCursor;
+      if (hasMore && items.isNotEmpty) {
+        final last = items.last;
+        nextCursor = KeysetCursor(createdAt: last.createdAt, id: last.id).encode();
+      }
+
+      final durationMs = sw.elapsedMilliseconds;
+      final metricName = isSearch
+          ? MetricDefinitions.patientSearchLatencyMs
+          : MetricDefinitions.patientQueryLatencyMs;
+      _telemetry.timing(metricName, durationMs);
+      _logger.info(
+        isSearch ? 'PATIENT_SEARCH_COMPLETED' : 'PATIENTS_FETCHED',
+        operation: 'fetch_patients',
+        durationMs: durationMs,
+        metadata: {'returned_count': items.length, 'has_more': hasMore},
+      );
+
+      return PaginatedResult<PatientModel>(
+        items: items,
+        nextCursor: nextCursor,
+        hasMore: hasMore,
+      );
+    } catch (e, stackTrace) {
+      sw.stop();
+      _telemetry.recordError(
+        e,
+        stackTrace: stackTrace,
+        errorCode: AppErrorCode.databaseError.code,
+      );
+      _logger.error(
+        'FETCH_PATIENTS_FAILED',
+        operation: 'fetch_patients',
+        errorCode: AppErrorCode.databaseError.code,
+        durationMs: sw.elapsedMilliseconds,
+      );
       rethrow;
     }
   }
@@ -52,8 +118,9 @@ class PatientService {
 
       if (data == null) return null;
       return PatientModel.fromJson(data);
-    } catch (e) {
-      debugPrint('[PatientService] Failed to fetch patient $patientId: $e');
+    } catch (e, stackTrace) {
+      _telemetry.recordError(e, stackTrace: stackTrace, errorCode: AppErrorCode.databaseError.code);
+      _logger.error('FETCH_PATIENT_BY_ID_FAILED', operation: 'fetch_patient_by_id', errorCode: AppErrorCode.databaseError.code);
       rethrow;
     }
   }
@@ -88,9 +155,11 @@ class PatientService {
           .select()
           .single();
 
+      _logger.info('PATIENT_CREATED', operation: 'create_patient', clinicId: clinicId);
       return PatientModel.fromJson(data);
-    } catch (e) {
-      debugPrint('[PatientService] Failed to create patient: $e');
+    } catch (e, stackTrace) {
+      _telemetry.recordError(e, stackTrace: stackTrace, errorCode: AppErrorCode.databaseError.code);
+      _logger.error('CREATE_PATIENT_FAILED', operation: 'create_patient', errorCode: AppErrorCode.databaseError.code, clinicId: clinicId);
       rethrow;
     }
   }
@@ -118,9 +187,11 @@ class PatientService {
           .select()
           .single();
 
+      _logger.info('PATIENT_UPDATED', operation: 'update_patient');
       return PatientModel.fromJson(data);
-    } catch (e) {
-      debugPrint('[PatientService] Failed to update patient: $e');
+    } catch (e, stackTrace) {
+      _telemetry.recordError(e, stackTrace: stackTrace, errorCode: AppErrorCode.databaseError.code);
+      _logger.error('UPDATE_PATIENT_FAILED', operation: 'update_patient', errorCode: AppErrorCode.databaseError.code);
       rethrow;
     }
   }

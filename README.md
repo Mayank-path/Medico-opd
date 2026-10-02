@@ -93,4 +93,15 @@ A GitHub Actions pipeline is configured at [`.github/workflows/ci.yml`](.github/
 
 ## 📖 Architecture & Living Context
 
-For a detailed architecture overview, running changelog, design rationales, system diagram, and "Do Not Break" rules, refer to [**`PROJECT_CONTEXT.md`**](PROJECT_CONTEXT.md).
+* [**`Living Project Context & Changelog`**](PROJECT_CONTEXT.md): System invariants, running task log, and architecture diagram.
+* [**`Block 0 — Production Architecture`**](docs/architecture/block0-production-architecture.md): 500-doctor system design, trust boundaries, multi-tenancy, mobile resilience, SPOFs, scaling matrix, and failure matrix.
+* [**`Block 0 — 500-Doctor Capacity Model`**](docs/architecture/block0-500-doctor-capacity-model.md): Normal, Busy, and Stress scenario models, audio sizing, faster-whisper STT, vLLM inference, database IOPS, and API latency budgets.
+* [**`Architecture Decision Records (ADRs)`**](docs/architecture/adr/):
+  * [ADR-0001: PostgreSQL Authoritative Source of Truth](docs/architecture/adr/ADR-0001-postgresql-authoritative-source-of-truth.md)
+  * [ADR-0002: Object Storage Abstraction for Audio Binaries](docs/architecture/adr/ADR-0002-object-storage-for-audio-binaries.md)
+  * [ADR-0003: Redis Non-Authoritative Role & Graceful Degradation](docs/architecture/adr/ADR-0003-redis-non-authoritative-role.md)
+  * [ADR-0004: Apache Kafka Asynchronous Event Streaming Backbone](docs/architecture/adr/ADR-0004-kafka-asynchronous-event-backbone.md)
+  * [ADR-0005: Decoupled, Horizontally Scalable STT and LLM Worker Architecture](docs/architecture/adr/ADR-0005-horizontal-stt-and-llm-worker-pools.md)
+  * [ADR-0006: Mobile Offline Resilience, Crash Recovery & Idempotency Contract](docs/architecture/adr/ADR-0006-mobile-offline-resilience-and-idempotency.md)
+  * [ADR-0007: Transactional Outbox Pattern for Asynchronous Kafka Publication](docs/architecture/adr/ADR-0007-transactional-outbox-for-kafka-publication.md)
+

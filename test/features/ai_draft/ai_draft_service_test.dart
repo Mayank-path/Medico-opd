@@ -43,11 +43,13 @@ void main() {
       expect(json['consultation_id'], 'cons-100');
       expect(json['status'], 'ai_draft');
       expect(json['model_used'], 'claude-3-5-sonnet-20241022');
+      expect(json['revision'], 1);
       expect(json['reviewed_by'], isNull);
       expect(json['reviewed_at'], isNull);
 
       final deserialized = AiDraftModel.fromJson(json);
       expect(deserialized.id, draft.id);
+      expect(deserialized.revision, 1);
       expect(deserialized.structuredJson['chief_complaint'], 'Throat pain and dry cough for 3 days');
       final prescriptions = deserialized.structuredJson['prescriptions'] as List;
       expect(prescriptions.length, equals(2));

@@ -45,6 +45,7 @@ class AiDraftModel {
   final DateTime? finalizedAt;
   final String modelUsed;
   final String promptVersion;
+  final int revision;
 
   const AiDraftModel({
     required this.id,
@@ -57,6 +58,7 @@ class AiDraftModel {
     this.finalizedAt,
     required this.modelUsed,
     required this.promptVersion,
+    this.revision = 1,
   });
 
   bool get isFinalized => status == AiDraftStatus.finalized;
@@ -73,6 +75,7 @@ class AiDraftModel {
     DateTime? finalizedAt,
     String? modelUsed,
     String? promptVersion,
+    int? revision,
   }) {
     return AiDraftModel(
       id: id ?? this.id,
@@ -85,6 +88,7 @@ class AiDraftModel {
       finalizedAt: finalizedAt ?? this.finalizedAt,
       modelUsed: modelUsed ?? this.modelUsed,
       promptVersion: promptVersion ?? this.promptVersion,
+      revision: revision ?? this.revision,
     );
   }
 
@@ -104,6 +108,7 @@ class AiDraftModel {
           : null,
       modelUsed: json['model_used'] as String? ?? '',
       promptVersion: json['prompt_version'] as String? ?? '',
+      revision: json['revision'] as int? ?? 1,
     );
   }
 
@@ -119,6 +124,7 @@ class AiDraftModel {
       'finalized_at': finalizedAt?.toIso8601String(),
       'model_used': modelUsed,
       'prompt_version': promptVersion,
+      'revision': revision,
     };
   }
 }
